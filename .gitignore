@@ -18,3 +18,7 @@ runs
 hub
 *.mp4
 *.json
+
+
+# DKS ignores
+keys/
