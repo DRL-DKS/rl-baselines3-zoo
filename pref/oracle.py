@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 import random
 from random import sample
-from pref.utils.utils import save_pickle, load_pickle
+from utils import save_pickle, load_pickle
 
 
 def mlp(sizes, activation, output_activation=nn.Identity):
@@ -36,7 +36,6 @@ class HumanCritic:
     BATCH_SIZE = 10
 
     def __init__(self,
-                 working_path,
                  obs_size=3,
                  action_size=2,
                  maximum_segment_buffer=1000000,
@@ -46,7 +45,6 @@ class HumanCritic:
                  hiden_sizes=(64, 64),
                  traj_k_lenght=100,
                  regularize=False,
-                 reward_model_name="/reward_model_training_initial",
                  env_name=None,
                  custom_oracle=True,
                  seed=12345):
