@@ -41,6 +41,7 @@ CartPole-v1:
   ent_coef: 0.0
   learning_rate: lin_0.001
   clip_range: lin_0.2
+  pref_learning: true
 
 MountainCar-v0:
   normalize: true
@@ -132,6 +133,7 @@ LunarLanderContinuous-v2:
   gamma: 0.999
   n_epochs: 4
   ent_coef: 0.01
+  #pref_learning: true
 
 # Tuned
 HalfCheetahBulletEnv-v0: &pybullet-defaults

@@ -12,13 +12,18 @@ import yaml
 from huggingface_hub import HfApi
 from sb3_contrib import ARS, QRDQN, TQC, TRPO, RecurrentPPO
 from stable_baselines3 import A2C, DDPG, DQN, PPO, SAC, TD3
-from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.callbacks import BaseCallback, EveryNTimesteps
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.sb2_compat.rmsprop_tf_like import RMSpropTFLike  # noqa: F401
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv, VecFrameStack, VecNormalize
 
 # For custom activation fn
 from torch import nn as nn  # noqa: F401 pylint: disable=unused-import
+
+from pref.callbacks import UpdateRewardFunction
+from pref.oracle import HumanCritic
+from pref.wrappers import get_metric
+from utils.wrappers import HumanReward
 
 ALGOS = {
     "a2c": A2C,
@@ -45,7 +50,17 @@ def flatten_dict_observations(env: gym.Env) -> gym.Env:
         return gym.wrappers.FlattenDictWrapper(env, dict_keys=list(keys))
 
 
-def get_wrapper_class(hyperparams: Dict[str, Any], key: str = "env_wrapper") -> Optional[Callable[[gym.Env], gym.Env]]:
+def get_preference(hc, env_name):
+    # TODO make this the zoo way (Refactor)
+    callbacks = []
+    update_reward_callback = UpdateRewardFunction(hc,env_name)
+    event_callback = EveryNTimesteps(n_steps=20000, callback=update_reward_callback)
+    callbacks.append(event_callback)
+    env_wrapper = (HumanReward, hc)
+    return env_wrapper, callbacks
+
+
+def get_wrapper_class(hyperparams: Dict[str, Any], key: str = "env_wrapper", pref=None) -> Optional[Callable[[gym.Env], gym.Env]]:
     """
     Get one or more Gym environment wrapper class specified as a hyper parameter
     "env_wrapper".
@@ -103,6 +118,24 @@ def get_wrapper_class(hyperparams: Dict[str, Any], key: str = "env_wrapper") -> 
             wrapper_class = getattr(wrapper_module, get_class_name(wrapper_name))
             wrapper_classes.append(wrapper_class)
             wrapper_kwargs.append(kwargs)
+        if pref and key == "env_wrapper":
+            wrapper_classes.append(pref[0])
+            wrapper_kwargs.append({"human_model": pref[1]})
+        def wrap_env(env: gym.Env) -> gym.Env:
+            """
+            :param env:
+            :return:
+            """
+            for wrapper_class, kwargs in zip(wrapper_classes, wrapper_kwargs):
+                env = wrapper_class(env, **kwargs)
+            return env
+
+        return wrap_env
+    elif pref and key == "env_wrapper":
+        wrapper_classes = []
+        wrapper_kwargs = []
+        wrapper_classes.append(pref[0])
+        wrapper_kwargs.append({"human_model": pref[1]})
 
         def wrap_env(env: gym.Env) -> gym.Env:
             """
@@ -118,7 +151,7 @@ def get_wrapper_class(hyperparams: Dict[str, Any], key: str = "env_wrapper") -> 
         return None
 
 
-def get_callback_list(hyperparams: Dict[str, Any]) -> List[BaseCallback]:
+def get_callback_list(hyperparams: Dict[str, Any], pref_callback=None) -> List[BaseCallback]:
     """
     Get one or more Callback class specified as a hyper-parameter
     "callback".
@@ -171,7 +204,9 @@ def get_callback_list(hyperparams: Dict[str, Any]) -> List[BaseCallback]:
             callback_module = importlib.import_module(get_module_name(callback_name))
             callback_class = getattr(callback_module, get_class_name(callback_name))
             callbacks.append(callback_class(**kwargs))
-
+    if pref_callback:
+        for callback in pref_callback:
+            callbacks.append(callback)
     return callbacks
 
 

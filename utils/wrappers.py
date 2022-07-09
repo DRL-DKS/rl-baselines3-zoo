@@ -2,6 +2,7 @@ import collections
 
 import gym
 import numpy as np
+import torch
 from sb3_contrib.common.wrappers import TimeFeatureWrapper  # noqa: F401 (backward compatibility)
 from scipy.signal import iirfilter, sosfilt, zpk2sos
 
@@ -384,15 +385,14 @@ class HumanReward(gym.Wrapper):
     In addition, it logs both the env and human reward per episode.
     """
 
-    def __init__(self, env, human_model, logger):
+    def __init__(self, env, human_model):
         super().__init__(env)
         self.env = env
         self.current_state = []
         self.episode_reward_human = 0
         self.episode_true_reward = 0
-        self.t = 0
         self.human_model = human_model
-        self.logger = logger
+        self.episode_count = 0
 
     def step(self, action):
         observation = self.get_human_reward_observation(action)
@@ -402,16 +402,16 @@ class HumanReward(gym.Wrapper):
 
         reward_human = self.human_model.reward_model(observation)[0].detach().numpy().item()
         self.episode_reward_human += reward_human
-
         reward = reward_human
         self.current_state = next_state
 
         if done:
-            self.logger.record("rollout/ep_human_rew", self.episode_reward_human)
-            self.logger.record("rollout/ep_true_rew_mean", self.episode_true_reward)
+            self.human_model.writer.add_scalar("rollout/ep_human_rew", self.episode_reward_human, self.episode_count)
+            self.human_model.writer.add_scalar("rollout/ep_true_rew", self.episode_true_reward, self.episode_count)
 
             self.episode_reward_human = 0
             self.episode_true_reward = 0
+            self.episode_count += 1
 
         return next_state, reward, done, info
 

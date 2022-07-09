@@ -109,7 +109,7 @@ class Metric:
 class SocialNavigationMetric(Metric):
     """
     Metric for the social navigation unity environment.
-    Logs the amount of force applied on average per episode.
+    Logs the amount of force app    lied on average per episode.
     """
     def __init__(self, agent):
         self.action_force = []

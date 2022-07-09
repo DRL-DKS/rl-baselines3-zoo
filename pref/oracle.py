@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 import random
 from random import sample
-from utils import save_pickle, load_pickle
+from pref.utils import save_pickle, load_pickle
 
 
 def mlp(sizes, activation, output_activation=nn.Identity):
