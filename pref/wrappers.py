@@ -10,14 +10,14 @@ class HumanReward(gym.Wrapper):
     In addition, it logs both the env and human reward per episode.
     """
 
-    def __init__(self, env, human_model, logger):
+    def __init__(self, env, hc, logger):
         super().__init__(env)
         self.env = env
         self.current_state = []
         self.episode_reward_human = 0
         self.episode_true_reward = 0
         self.t = 0
-        self.human_model = human_model
+        self.human_model = hc
         self.logger = logger
 
     def step(self, action):

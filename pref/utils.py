@@ -2,6 +2,7 @@ import math
 import pickle as pkl
 from datetime import datetime
 
+import gym
 import yaml
 
 def save_pickle(obj, name):
@@ -127,6 +128,13 @@ def get_hyperparameters(env_name):
 
     return hyperparameters, env_hyperparameters, learn_hyperparameters, misc
 
+
+def get_env_dimensions(env_id):
+    tmp_env = gym.make(env_id)
+    action_size = tmp_env.action_space.shape[0] if len(tmp_env.action_space.shape) > 0 else 1
+    state_size = tmp_env.observation_space.shape
+    tmp_env.close()
+    return action_size, state_size
 
 if __name__ == "__main__":
     import os

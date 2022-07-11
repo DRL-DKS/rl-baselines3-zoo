@@ -133,7 +133,37 @@ LunarLanderContinuous-v2:
   gamma: 0.999
   n_epochs: 4
   ent_coef: 0.01
-  #pref_learning: true
+  pref_learning:
+    active: true
+    human_critic:
+      maximum_segment_buffer: 1000000
+      maximum_preference_buffer: 3500
+      training_epochs: 10
+      batch_size: 32
+      hidden_sizes: [64, 64]
+      traj_k_lenght: 50
+      regularize: false
+      custom_oracle: true
+    wrapper:
+      - utils.wrappers.HumanReward:
+          human_critic: true
+    callback:
+      - pref.callbacks.UpdateRewardFunction:
+          human_critic: true
+          use_env_name: true
+          n_queries: 10
+          initial_reward_estimation_epochs: 200
+          reward_training_epochs: 50
+          truth: 90
+          traj_length: 50
+          smallest_rew_threshold: 0
+          largest_rew_threshold: 0
+          verbose: 0
+          n_initial_queries: 200
+          seed: 12345
+          max_queries: 1400
+          every_n_timestep: 20000
+
 
 # Tuned
 HalfCheetahBulletEnv-v0: &pybullet-defaults

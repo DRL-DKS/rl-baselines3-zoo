@@ -42,10 +42,11 @@ class UpdateRewardFunction(BaseCallback):
                  traj_length=50,
                  smallest_rew_threshold=0,
                  largest_rew_threshold=0,
-                 verbose=0,
                  n_initial_queries=200,
-                 seed=12345,
-                 max_queries=1400):
+                 max_queries=1400,
+                 verbose=0,
+                 seed=12345
+                 ):
         super(UpdateRewardFunction, self).__init__(verbose)
         self.n_queries = n_queries
         self.hc = hc

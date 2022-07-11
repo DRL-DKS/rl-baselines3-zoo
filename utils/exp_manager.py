@@ -45,9 +45,11 @@ from torch import nn as nn  # noqa: F401
 # Register custom envs
 import utils.import_envs  # noqa: F401 pytype: disable=import-error
 from pref.oracle import HumanCritic
+from pref.utils import get_env_dimensions
 from utils.callbacks import SaveVecNormalizeCallback, TrialEvalCallback
 from utils.hyperparams_opt import HYPERPARAMS_SAMPLER
-from utils.utils import ALGOS, get_callback_list, get_latest_run_id, get_wrapper_class, linear_schedule, get_preference
+from utils.utils import ALGOS, get_callback_list, get_latest_run_id, get_wrapper_class, linear_schedule, \
+    get_preference_callbacks, get_preference_wrappers, get_preference_human_critic
 
 
 class ExperimentManager:
@@ -374,20 +376,18 @@ class ExperimentManager:
             self.frame_stack = hyperparams["frame_stack"]
             del hyperparams["frame_stack"]
 
-        pref_wrapper, pref_callbacks = None, None
+        pref_wrappers, pref_callbacks = None, []
         if "pref_learning" in hyperparams.keys():
-            # TODO create wrapper and callback here for preflearning
-            tmp_env = gym.make(self.env_id)
-            action_size = tmp_env.action_space.shape[0] if len(tmp_env.action_space.shape) > 0 else 1
-            state_size = tmp_env.observation_space.shape
-            hc = HumanCritic(state_size, action_size, custom_oracle=False, env_name=self.env_id)
-            pref_wrapper, pref_callbacks = get_preference(hc, self.env_id)
+            if hyperparams["pref_learning"]["active"]:
+                hc = get_preference_human_critic(hyperparams, self.env_id)
+                pref_callbacks = get_preference_callbacks(hyperparams, hc, self.env_id)
+                pref_wrappers = get_preference_wrappers(hyperparams, hc, self.env_id)
             del hyperparams["pref_learning"]
 
 
         # obtain a class object from a wrapper name string in hyperparams
         # and delete the entry
-        env_wrapper = get_wrapper_class(hyperparams, pref=pref_wrapper)
+        env_wrapper = get_wrapper_class(hyperparams, pref=pref_wrappers)
         if "env_wrapper" in hyperparams.keys():
             del hyperparams["env_wrapper"]
 
@@ -402,6 +402,8 @@ class ExperimentManager:
             del hyperparams["callback"]
 
         return hyperparams, env_wrapper, callbacks, vec_env_wrapper
+
+
 
     def _preprocess_action_noise(
         self, hyperparams: Dict[str, Any], saved_hyperparams: Dict[str, Any], env: VecEnv

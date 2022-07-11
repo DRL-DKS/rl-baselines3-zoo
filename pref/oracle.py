@@ -42,11 +42,11 @@ class HumanCritic:
                  maximum_preference_buffer=3500,
                  training_epochs=10,
                  batch_size=32,
-                 hiden_sizes=(64, 64),
+                 hidden_sizes=(64, 64),
                  traj_k_lenght=100,
                  regularize=False,
                  env_name=None,
-                 custom_oracle=True,
+                 custom_oracle=False,
                  seed=12345):
         print("created")
         random.seed(seed)
@@ -65,7 +65,7 @@ class HumanCritic:
         # === MODEL ===
         self.obs_size = obs_size
         self.action_size = action_size
-        self.SIZES = hiden_sizes
+        self.SIZES = hidden_sizes
         self.init_model()  # creates model
 
         # === DATASET TRAINING ===

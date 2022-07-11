@@ -22,6 +22,7 @@ from torch import nn as nn  # noqa: F401 pylint: disable=unused-import
 
 from pref.callbacks import UpdateRewardFunction
 from pref.oracle import HumanCritic
+from pref.utils import get_env_dimensions
 from pref.wrappers import get_metric
 from utils.wrappers import HumanReward
 
@@ -50,14 +51,140 @@ def flatten_dict_observations(env: gym.Env) -> gym.Env:
         return gym.wrappers.FlattenDictWrapper(env, dict_keys=list(keys))
 
 
-def get_preference(hc, env_name):
-    # TODO make this the zoo way (Refactor)
+def get_preference_human_critic(hyperparams, env_name):
+    action_size, state_size = get_env_dimensions(env_name)
+    pref_dict = hyperparams["pref_learning"]
+    kwargs = pref_dict.get("human_critic")
+    kwargs["env_name"] = env_name
+
+    hc = HumanCritic(state_size, action_size, **kwargs)
+    return hc
+
+
+def get_preference_wrappers(hyperparams, hc, env_name):
+    """
+    Get the wrappers needed to run the specified preference learning algorithm.
+
+    e.g.
+    pref_learning:
+    wrapper:
+        - utils.wrappers.HumanReward:
+            human_critic: true
+    """
+    def get_module_name(wrapper_name):
+        return ".".join(wrapper_name.split(".")[:-1])
+
+    def get_class_name(wrapper_name):
+        return wrapper_name.split(".")[-1]
+
+    pref_dict = hyperparams["pref_learning"]
+    wrappers = []
+    if "wrapper" in pref_dict.keys():
+        wrapper_name = pref_dict.get("wrapper")
+
+        if not isinstance(wrapper_name, list):
+            wrapper_names = [wrapper_name]
+        else:
+            wrapper_names = wrapper_name
+
+        # Handle multiple wrappers
+        for wrapper_name in wrapper_names:
+            # Handle keyword arguments
+            if isinstance(wrapper_name, dict):
+                assert len(wrapper_name) == 1, (
+                    "You have an error in the formatting "
+                    f"of your YAML file near {wrapper_name}. "
+                    "You should check the indentation."
+                )
+                wrapper_dict = wrapper_name
+                wrapper_name = list(wrapper_dict.keys())[0]
+                kwargs = wrapper_dict[wrapper_name]
+
+                if "human_critic" in kwargs:
+                    if kwargs["human_critic"]:
+                        kwargs["hc"] = hc
+                    del kwargs["human_critic"]
+            else:
+                kwargs = {}
+            wrapper_module = importlib.import_module(get_module_name(wrapper_name))
+            wrapper_class = getattr(wrapper_module, get_class_name(wrapper_name))
+            wrappers.append((wrapper_class, kwargs))
+
+    return wrappers
+
+def get_preference_callbacks(hyperparams, hc, env_name):
+    """
+    Get the callbacks needed to run the specified preference learning algorithm.
+
+    e.g.
+    pref_learning:
+        callback:
+            - pref.callbacks.UpdateRewardFunction:
+                human_critic: true
+                use_env_name: true
+                n_queries: 10
+                initial_reward_estimation_epochs: 200
+    """
+
+    def get_module_name(callback_name):
+        return ".".join(callback_name.split(".")[:-1])
+
+    def get_class_name(callback_name):
+        return callback_name.split(".")[-1]
+
     callbacks = []
-    update_reward_callback = UpdateRewardFunction(hc,env_name)
-    event_callback = EveryNTimesteps(n_steps=20000, callback=update_reward_callback)
-    callbacks.append(event_callback)
-    env_wrapper = (HumanReward, hc)
-    return env_wrapper, callbacks
+    pref_dict = hyperparams["pref_learning"]
+    if "callback" in pref_dict.keys():
+        callback_name = pref_dict.get("callback")
+
+        if callback_name is None:
+            return callbacks
+
+        if not isinstance(callback_name, list):
+            callback_names = [callback_name]
+        else:
+            callback_names = callback_name
+
+
+        # Handle multiple wrappers
+        for callback_name in callback_names:
+            # Handle keyword arguments
+            if isinstance(callback_name, dict):
+                assert len(callback_name) == 1, (
+                    "You have an error in the formatting "
+                    f"of your YAML file near {callback_name}. "
+                    "You should check the indentation."
+                )
+                callback_dict = callback_name
+                callback_name = list(callback_dict.keys())[0]
+                kwargs = callback_dict[callback_name]
+                if "human_critic" in kwargs.keys():
+                    if kwargs["human_critic"]:
+                        kwargs["hc"] = hc
+                    del kwargs["human_critic"]
+
+                if "use_env_name" in kwargs.keys():
+                    if kwargs["use_env_name"]:
+                        kwargs["env_name"] = env_name
+                    del kwargs["use_env_name"]
+
+            else:
+                kwargs = {}
+            callback_module = importlib.import_module(get_module_name(callback_name))
+            callback_class = getattr(callback_module, get_class_name(callback_name))
+
+
+            if "every_n_timestep" in kwargs.keys():
+                n_steps = kwargs["every_n_timestep"]
+                del kwargs["every_n_timestep"]
+                callback_class = callback_class(**kwargs)
+                callback_class = EveryNTimesteps(n_steps=n_steps, callback=callback_class)
+                callbacks.append(callback_class)
+
+            else:
+                callbacks.append(callback_class(**kwargs))
+
+    return callbacks
 
 
 def get_wrapper_class(hyperparams: Dict[str, Any], key: str = "env_wrapper", pref=None) -> Optional[Callable[[gym.Env], gym.Env]]:
@@ -119,8 +246,10 @@ def get_wrapper_class(hyperparams: Dict[str, Any], key: str = "env_wrapper", pre
             wrapper_classes.append(wrapper_class)
             wrapper_kwargs.append(kwargs)
         if pref and key == "env_wrapper":
-            wrapper_classes.append(pref[0])
-            wrapper_kwargs.append({"human_model": pref[1]})
+            for wrapper_class, wrapper_kwarg in pref:
+                wrapper_classes.append(wrapper_class)
+                wrapper_kwargs.append(wrapper_kwarg)
+
         def wrap_env(env: gym.Env) -> gym.Env:
             """
             :param env:
@@ -134,8 +263,9 @@ def get_wrapper_class(hyperparams: Dict[str, Any], key: str = "env_wrapper", pre
     elif pref and key == "env_wrapper":
         wrapper_classes = []
         wrapper_kwargs = []
-        wrapper_classes.append(pref[0])
-        wrapper_kwargs.append({"human_model": pref[1]})
+        for wrapper_class, wrapper_kwarg in pref:
+            wrapper_classes.append(wrapper_class)
+            wrapper_kwargs.append(wrapper_kwarg)
 
         def wrap_env(env: gym.Env) -> gym.Env:
             """
