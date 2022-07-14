@@ -4,6 +4,7 @@ import importlib
 import os
 import time
 import uuid
+from datetime import datetime
 
 import gym
 import numpy as np
@@ -14,7 +15,7 @@ from stable_baselines3.common.utils import set_random_seed
 # Register custom envs
 import utils.import_envs  # noqa: F401 pytype: disable=import-error
 from utils.exp_manager import ExperimentManager
-from utils.utils import ALGOS, StoreDict
+from utils.utils import ALGOS, StoreDict, get_latest_run_id
 
 seaborn.set()
 
@@ -179,7 +180,10 @@ if __name__ == "__main__":  # noqa: C901
                 "if you want to use Weights & Biases to track experiment, please install W&B via `pip install wandb`"
             )
 
-        run_name = f"{args.env}__{args.algo}__{args.seed}__{int(time.time())}"
+        currTime = datetime.now()
+        date_time = currTime.strftime("%H:%M:%S-%d/%m/%Y")
+
+        run_name = f"{args.env}__{date_time}__{args.seed}"
         run = wandb.init(
             name=run_name,
             project=args.wandb_project_name,
@@ -240,5 +244,9 @@ if __name__ == "__main__":  # noqa: C901
         if model is not None:
             exp_manager.learn(model)
             exp_manager.save_trained_model(model)
+            log_path = f"{args.log_folder}/{args.algo}/"
+            specific_log_path = f"{log_path}{env_id}_{get_latest_run_id(log_path, env_id)}{uuid_str}/"
+            wandb.save(f'{specific_log_path}*')
+            #run.upload_file(f"{log_path}{env_id}_{get_latest_run_id(log_path, env_id)}{uuid_str}/")
     else:
         exp_manager.hyperparameters_optimization()

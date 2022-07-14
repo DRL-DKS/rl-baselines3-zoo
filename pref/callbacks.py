@@ -151,6 +151,21 @@ class UpdateRewardFunction(BaseCallback):
         env.close()
         return total_segments
 
+    def update_params(self,
+                      n_queries=10,
+                      initial_reward_estimation_epochs=200,
+                      reward_training_epochs=50,
+                      traj_length=50,
+                      n_initial_queries=200,
+                      max_queries=1400,
+                      ):
+        self.n_queries = n_queries
+        self.initial_reward_estimation_epochs = initial_reward_estimation_epochs
+        self.reward_training_epochs = reward_training_epochs
+        self.traj_length = traj_length
+        self.n_initial_queries = n_initial_queries
+        self.max_queries = max_queries
+
     def collect_segments_with_critical_points(self, model, test_episodes=5000, n_collect_segments=0, extra_env=None):  # evaluate
         total_segments = []
         critical_points = []

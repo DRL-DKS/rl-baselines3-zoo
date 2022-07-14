@@ -3,6 +3,7 @@ import collections
 import gym
 import numpy as np
 import torch
+import wandb
 from sb3_contrib.common.wrappers import TimeFeatureWrapper  # noqa: F401 (backward compatibility)
 from scipy.signal import iirfilter, sosfilt, zpk2sos
 
@@ -406,8 +407,12 @@ class HumanReward(gym.Wrapper):
         self.current_state = next_state
 
         if done:
-            self.human_model.writer.add_scalar("rollout/ep_human_rew", self.episode_reward_human, self.episode_count)
-            self.human_model.writer.add_scalar("rollout/ep_true_rew", self.episode_true_reward, self.episode_count)
+            if wandb.run is not None:
+                wandb.log({"rollout/ep_human_rew": self.episode_reward_human,
+                           "rollout/ep_true_rew": self.episode_true_reward})
+            if self.human_model.writer:
+                self.human_model.writer.add_scalar("rollout/ep_human_rew", self.episode_reward_human, self.episode_count)
+                self.human_model.writer.add_scalar("rollout/ep_true_rew", self.episode_true_reward, self.episode_count)
 
             self.episode_reward_human = 0
             self.episode_true_reward = 0

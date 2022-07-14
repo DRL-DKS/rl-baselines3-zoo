@@ -55,6 +55,47 @@ def sample_ppo_params(trial: optuna.Trial) -> Dict[str, Any]:
 
     activation_fn = {"tanh": nn.Tanh, "relu": nn.ReLU, "elu": nn.ELU, "leaky_relu": nn.LeakyReLU}[activation_fn]
 
+    # Preference part
+    # Human Critic
+    maximum_segment_buffer = trial.suggest_categorical("hc_maximum_segment_buffer", [10000, 100000, 1000000])
+    maximum_preference_buffer = trial.suggest_categorical("hc_maximum_preference_buffer", [100, 1000, 1000000])
+    hc_batch_size = trial.suggest_categorical("hc_batch_size", [32, 64, 128, 256])
+    traj_k_lenght = trial.suggest_categorical("hc_btraj_k_lenght", [5, 10, 25, 50])
+
+    hc_net_arch = trial.suggest_categorical("hc_net_arch", ["mini", "small", "medium-small", "medium", "large"])
+    hc_net_arch = {
+        "mini": [dict(pi=[32, 32], vf=[32, 32])],
+        "small": [dict(pi=[64, 64], vf=[64, 64])],
+        "medium-small": [dict(pi=[128, 128], vf=[128, 128])],
+        "medium": [dict(pi=[256, 256], vf=[256, 256])],
+        "large": [dict(pi=[256, 256, 256], vf=[256, 256, 256])]
+    }[hc_net_arch]
+
+    hc = {
+        "maximum_segment_buffer": maximum_segment_buffer,
+        "maximum_preference_buffer": maximum_preference_buffer,
+        "batch_size": hc_batch_size,
+        "traj_k_lenght": traj_k_lenght,
+        "hidden_sizes": hc_net_arch
+    }
+
+    # Loop specific
+    n_queries = trial.suggest_categorical("pref_n_queries", [10, 40, 70])
+    n_initial_queries = trial.suggest_categorical("pref_n_initial_queries", [50, 100, 200])
+    initial_reward_estimation_epochs = trial.suggest_categorical("pref_initial_reward_estimation_epochs", [200, 400])
+    reward_training_epochs = trial.suggest_categorical("pref_reward_training_epochs", [20, 50, 100])
+    max_queries = trial.suggest_categorical("pref_max_queries", [400, 1400, 2100])
+    traj_length = traj_k_lenght
+
+    pref = {
+        "n_queries": n_queries,
+        "n_initial_queries": n_initial_queries,
+        "initial_reward_estimation_epochs": initial_reward_estimation_epochs,
+        "reward_training_epochs": reward_training_epochs,
+        "max_queries": max_queries,
+        "traj_length": traj_length
+    }
+
     return {
         "n_steps": n_steps,
         "batch_size": batch_size,
@@ -73,6 +114,8 @@ def sample_ppo_params(trial: optuna.Trial) -> Dict[str, Any]:
             activation_fn=activation_fn,
             ortho_init=ortho_init,
         ),
+        "hc": hc,
+        "pref": pref
     }
 
 

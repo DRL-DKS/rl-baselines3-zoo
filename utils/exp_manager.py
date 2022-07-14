@@ -44,6 +44,7 @@ from torch import nn as nn  # noqa: F401
 
 # Register custom envs
 import utils.import_envs  # noqa: F401 pytype: disable=import-error
+from pref.callbacks import UpdateRewardFunction
 from pref.oracle import HumanCritic
 from pref.utils import get_env_dimensions
 from utils.callbacks import SaveVecNormalizeCallback, TrialEvalCallback
@@ -665,6 +666,24 @@ class ExperimentManager:
         sampled_hyperparams = HYPERPARAMS_SAMPLER[self.algo](trial)
         kwargs.update(sampled_hyperparams)
 
+        # TODO perform preference learning hyperparameter tuning
+        pref_callback = None
+        if self.algo == "ppo":
+            # 1. Get the pref-specific kwargs
+            hc = kwargs["hc"]
+            pref = kwargs["pref"]
+
+            # 2. Update the callbacks & wrappers
+            for callback in self.callbacks:
+                if isinstance(callback, UpdateRewardFunction):
+                    callback.hc.update_params(**hc)
+                    callback.update_params(**pref)
+                    pref_callback = callback
+
+            # 3. Delete them from kwargs
+            del kwargs["hc"]
+            del kwargs["pref"]
+
         n_envs = 1 if self.algo == "ars" else self.n_envs
         env = self.create_envs(n_envs, no_log=True)
 
@@ -706,6 +725,8 @@ class ExperimentManager:
             deterministic=self.deterministic_eval,
         )
         callbacks.append(eval_callback)
+        if pref_callback:
+            callbacks.append(pref_callback)
 
         learn_kwargs = {}
         # Special case for ARS

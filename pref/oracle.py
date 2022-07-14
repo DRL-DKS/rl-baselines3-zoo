@@ -91,6 +91,30 @@ class HumanCritic:
         self.custom_oracle = custom_oracle
         self.oracle_reward_function = self.get_oracle_reward_function(env_name)
 
+    def update_params(self,
+                 maximum_segment_buffer=1000000,
+                 maximum_preference_buffer=3500,
+                 batch_size=32,
+                 hidden_sizes=(64, 64),
+                 traj_k_lenght=100):
+
+        # ===BUFFER===
+        self.segments = [None] * maximum_segment_buffer  # lists are very fast for random access
+        self.pairs = [None] * maximum_preference_buffer
+        self.critical_points = [None] * maximum_segment_buffer
+        self.maximum_segment_buffer, self.maximum_preference_buffer, self.maximum_critical_points_buffer = maximum_segment_buffer, maximum_preference_buffer, maximum_segment_buffer
+        self.segments_index, self.pairs_index, self.critical_points_index = 0, 0, 0
+        self.segments_size, self.pairs_size, self.critical_points_size = 0, 0, 0
+        self.segments_max_k_len = traj_k_lenght
+
+        self.SIZES = hidden_sizes
+        self.init_model()
+
+        self.batch_size = batch_size
+
+        self.updates = 0
+        self.punishments_given = 0
+        self.approvements_given = 0
 
     def get_oracle_reward_function(self, env_name):
         if not self.custom_oracle:
@@ -621,99 +645,3 @@ class HumanCritic:
         else:
             raise "Error computing preferences"
         return [segment1, segment2, preference]
-
-
-if __name__ == "__main__":
-    meta_data = {'loss': [], 'accuracy': [], 'episode_accuracy_mean': [], 'episode_loss_mean': []}
-
-    env_name = "Walker2d-v3"
-    # env_name = "Pendulum-v1"
-    # env_name = "Hopper-v3"
-    # env_name = "HalfCheetah-v3"
-    reward_model_name = env_name
-    env = gym.make(env_name)
-    action_size = env.action_space.shape[0]
-    state_size = env.observation_space.shape
-    print("--State and action sizes--")
-    print(state_size)
-    print(action_size)
-    print(env.action_space.low.dtype)
-    print("----")
-
-    hc = HumanCritic(obs_size=state_size,
-                     action_size=action_size,
-                     hiden_sizes=(256, 256, 256),
-                     maximum_segment_buffer=100000,
-                     maximum_preference_buffer=100000,
-                     training_epochs=100,
-                     batch_size=64)
-    print(hc.reward_model)
-    hc.load_buffers(env_name)
-
-    fish = 0
-
-    if fish == 0:
-        truth = 100
-        queries = hc.get_queries_to_be_trained(number_of_queries=2100, experiments=1, truth=truth)
-        o1, o2, prefs = hc.generate_data_for_training(queries)
-
-        tensor_o1 = torch.Tensor(o1)
-        tensor_o2 = torch.Tensor(o2)
-        tensor_prefs = torch.Tensor(prefs)
-        my_dataset = TensorDataset(tensor_o1, tensor_o2, tensor_prefs)
-        my_dataloader = DataLoader(my_dataset, batch_size=hc.batch_size, shuffle=True)
-
-        meta_data = hc.train_dataset(my_dataloader, meta_data)
-        save_pickle(meta_data, name=str(truth))
-
-        losses = meta_data["loss"]
-
-        hc.save_reward_model(env_name)
-
-    elif fish == 1:  # check rewards and total_predicted_rewards
-        hc.load_reward_model(reward_model_name)
-        queries = hc.get_queries_to_be_trained()
-        o1, o2, prefs = hc.generate_data_for_training(queries)
-        for query in queries:
-            segment_1, reward_1 = query[0][0], query[0][1]
-            segment_2, reward_2 = query[1][0], query[1][1]
-            predicted_r_1, predicted_r_2 = 0, 0
-            for seg_1, seg_2 in zip(segment_1, segment_2):
-                seg_1_processed = torch.tensor(seg_1.reshape(1, -1)).type(torch.float32)
-                seg_2_processed = torch.tensor(seg_2.reshape(1, -1)).type(torch.float32)
-                predicted_r_1 += hc.reward_model(seg_1_processed)[0][0].detach().numpy()
-                predicted_r_2 += hc.reward_model(seg_2_processed)[0][0].detach().numpy()
-            print("seg 1 total reward {} predicted {} ## seg 2 had total reward {} and predicted {}".format(reward_1, predicted_r_1, reward_2, predicted_r_2))
-
-    elif fish == 2:  # check queries for each observation to see predicted rewards
-        hc.load_reward_model(reward_model_name)
-        queries = hc.get_queries_to_be_trained()
-        o1, o2, prefs = hc.generate_data_for_training(queries)
-        for query in queries:
-            segment_1, reward_1 = query[0][0], query[0][1]
-            segment_2, reward_2 = query[1][0], query[1][1]
-            predicted_r_1, predicted_r_2 = 0, 0
-            print("seg 1 total reward {}".format(reward_1))
-            for seg_1 in segment_1:
-                seg_1_processed = torch.tensor(seg_1.reshape(1, -1)).type(torch.float32)
-                reward_obs = hc.reward_model(seg_1_processed)[0][0].detach().numpy()
-                print(reward_obs)
-
-            print("seg 2 total reward {}".format(reward_2))
-            for seg_2 in segment_2:
-                seg_2_processed = torch.tensor(seg_2.reshape(1, -1)).type(torch.float32)
-                reward_obs = hc.reward_model(seg_2_processed)[0][0].detach().numpy()
-                print(reward_obs)
-            print("---")
-
-    elif fish == 3:
-        queries = hc.get_queries_to_be_trained(number_of_queries=10, experiments=1, truth=100)
-        o1, o2, prefs = hc.generate_data_for_training(queries)
-
-        tensor_o1 = torch.Tensor(o1)
-        tensor_o2 = torch.Tensor(o2)
-        tensor_prefs = torch.Tensor(prefs)
-        my_dataset = TensorDataset(tensor_o1, tensor_o2, tensor_prefs)
-        my_dataloader = DataLoader(my_dataset, batch_size=10, shuffle=True)
-
-        meta_data = hc.train_dataset(my_dataloader, meta_data)
