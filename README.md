@@ -56,19 +56,34 @@ To run preference learning all you have to do is to add the preference learning 
 | callback.n_queries                        | How many queries / preferences to be collected per reward model update                                                                   |
 | callback.initial_reward_estimation_epochs | How many epochs to run for the initial training of the reward model                                                                      |
 | callback.reward_training_epochs           | How many epochs to run for the update of the reward model                                                                                |
-| callback.truth                            | Error rate (to simulat faulty human) for how often the oracle human will give the wrong preference                                       |
+| callback.truth                            | Error rate (to simulate faulty human) for how often the oracle human will give the wrong preference                                      |
 | callback.traj_length                      | Overriden by human_critic                                                                                                                |
 | callback.n_initial_queries                | The initial amount of queries / preferences to collect for the initial reward model update                                               |
 | callback.max_queries                      | The max amount of queries that will be collected before the agent stop asking for more and stop updating the reward model                |
 | callback.every_n_timestep                 | The amount of timesteps between each update (currently does nothing as it's always set to 20k)                                           |
 
-To run, simply use the same commands as usual. For example:
+### Run training
 
+To run, simply use the same commands as usual.
+
+No docker:
 ~~~
 python train.py --algo ppo --env LunarLanderContinuous-v2
 ~~~
+Docker:
+~~~
+./scripts/run_docker_cpu.sh python train.py --algo ppo --env LunarLanderContinuous-v2
+~~~
 
 If you don't want to use preference learning, simply change the hyperparameter file so that "active: false". Currently no command line argument has been added to do this.
+
+### Hyperparameter tuning
+
+You can also run hyperparameter tuning using the regular commands. For example:
+~~~
+python train.py --algo ppo --env LunarLanderContinuous-v2 -n 500000 -optimize --n-trials 200 --n-jobs 2 --sampler tpe --pruner median
+~~~
+
 
 ## Wrappers
 
@@ -81,7 +96,7 @@ To create the wrapper in code you need to create it as
 hc = HumanCritic(**args)
 env = HumanReward(env, hc)
 ~~~
-Important to note is that if you want to update the reward model of the HumanCritic and it's done via a callback, then it's important that they share the same HumanCritic.
+Important to note is that if you want to update the reward model of the HumanCritic and it's done via a callback, then it's important that they share the same HumanCritic instance.
 
 ## Callbacks
 
