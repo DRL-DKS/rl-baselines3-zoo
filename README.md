@@ -69,3 +69,29 @@ python train.py --algo ppo --env LunarLanderContinuous-v2
 ~~~
 
 If you don't want to use preference learning, simply change the hyperparameter file so that "active: false". Currently no command line argument has been added to do this.
+
+## Wrappers
+
+### HumanReward
+Replaces the environment reward with the reward received from the preference learning reward model.
+
+#### Code usage
+To create the wrapper in code you need to create it as
+~~~
+hc = HumanCritic(**args)
+env = HumanReward(env, hc)
+~~~
+Important to note is that if you want to update the reward model of the HumanCritic and it's done via a callback, then it's important that they share the same HumanCritic.
+
+## Callbacks
+
+### UpdateRewardFunction
+Callback to periodically gather query feedback and updates the reward model.
+
+#### Code usage
+To create the callback in code you need to create it as
+~~~
+hc = HumanCritic(**args)
+env = UpdateRewardFunction(hc, env_name, **callbackArgs)
+~~~
+Important to note is that if you want to use it with the HumanCritic wrapper, then they should share the same HumanCritic instance.
