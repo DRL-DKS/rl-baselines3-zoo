@@ -61,7 +61,7 @@ def get_preference_human_critic(hyperparams, env_name):
     return hc
 
 
-def get_preference_wrappers(hyperparams, hc, env_name):
+def get_preference_wrappers(hyperparams, hc, env_name, n_envs=1):
     """
     Get the wrappers needed to run the specified preference learning algorithm.
 
@@ -104,6 +104,7 @@ def get_preference_wrappers(hyperparams, hc, env_name):
                     if kwargs["human_critic"]:
                         kwargs["hc"] = hc
                     del kwargs["human_critic"]
+                kwargs["n_envs"] = n_envs
             else:
                 kwargs = {}
             wrapper_module = importlib.import_module(get_module_name(wrapper_name))
@@ -111,6 +112,7 @@ def get_preference_wrappers(hyperparams, hc, env_name):
             wrappers.append((wrapper_class, kwargs))
 
     return wrappers
+
 
 def get_preference_callbacks(hyperparams, hc, env_name):
     """

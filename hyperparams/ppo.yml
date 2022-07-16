@@ -122,6 +122,56 @@ LunarLander-v2:
   n_epochs: 4
   ent_coef: 0.01
 
+Social-Nav-v1:
+  n_envs: 1
+  n_timesteps: !!float 1e6
+  policy: 'MlpPolicy'
+  n_steps: 1024
+  batch_size: 64
+  gae_lambda: 0.98
+  gamma: 0.999
+  n_epochs: 4
+  ent_coef: 0.01
+  pref_learning:
+    active: true
+    human_critic:
+      maximum_segment_buffer: 1000000
+      maximum_preference_buffer: 3500
+      training_epochs: 10
+      batch_size: 32
+      hidden_sizes: [ 64, 64 ]
+      traj_k_lenght: 50
+      regularize: true
+      custom_oracle: true
+    wrapper:
+      - utils.wrappers.HumanReward:
+          human_critic: true
+    callback:
+      - pref.callbacks.UpdateRewardFunctionCriticalPoint:
+          human_critic: true
+          use_env_name: true
+          n_queries: 20
+          initial_reward_estimation_epochs: 200
+          reward_training_epochs: 50
+          truth: 90
+          traj_length: 50
+          smallest_rew_threshold: -0.2
+          largest_rew_threshold: 0.1
+          n_initial_queries: 200
+          max_queries: 1400
+          every_n_timestep: 20000
+#      - pref.callbacks.UpdateRewardFunction:
+#          human_critic: true
+#          use_env_name: true
+#          n_queries: 10
+#          initial_reward_estimation_epochs: 200
+#          reward_training_epochs: 50
+#          truth: 90
+#          traj_length: 50
+#          n_initial_queries: 40
+#          max_queries: 1400
+#          every_n_timestep: 20000
+
 LunarLanderContinuous-v2:
   n_envs: 16
   n_timesteps: !!float 1e6
@@ -141,13 +191,13 @@ LunarLanderContinuous-v2:
       batch_size: 32
       hidden_sizes: [64, 64]
       traj_k_lenght: 50
-      regularize: false
+      regularize: true
       custom_oracle: true
     wrapper:
       - utils.wrappers.HumanReward:
           human_critic: true
     callback:
-      - pref.callbacks.UpdateRewardFunction:
+      - pref.callbacks.UpdateRewardFunctionCriticalPoint:
           human_critic: true
           use_env_name: true
           n_queries: 10
@@ -155,13 +205,23 @@ LunarLanderContinuous-v2:
           reward_training_epochs: 50
           truth: 90
           traj_length: 50
-          smallest_rew_threshold: 0
-          largest_rew_threshold: 0
-          verbose: 0
+          smallest_rew_threshold: -30
+          largest_rew_threshold: 20
           n_initial_queries: 200
-          seed: 12345
           max_queries: 1400
           every_n_timestep: 20000
+#      - pref.callbacks.UpdateRewardFunction:
+#          human_critic: true
+#          use_env_name: true
+#          n_queries: 10
+#          initial_reward_estimation_epochs: 200
+#          reward_training_epochs: 50
+#          truth: 90
+#          traj_length: 50
+#          n_initial_queries: 200
+#          max_queries: 1400
+#          every_n_timestep: 20000
+
 
 
 # Tuned

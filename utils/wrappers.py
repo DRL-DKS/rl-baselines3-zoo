@@ -386,14 +386,15 @@ class HumanReward(gym.Wrapper):
     In addition, it logs both the env and human reward per episode.
     """
 
-    def __init__(self, env, hc):
+    def __init__(self, env, hc, n_envs=1):
         super().__init__(env)
         self.env = env
         self.current_state = []
         self.episode_reward_human = 0
         self.episode_true_reward = 0
         self.human_model = hc
-        self.episode_count = 0
+        self.t = 0
+        self.n_envs = n_envs
 
     def step(self, action):
         observation = self.get_human_reward_observation(action)
@@ -409,15 +410,16 @@ class HumanReward(gym.Wrapper):
         if done:
             if wandb.run is not None:
                 wandb.log({"rollout/ep_human_rew": self.episode_reward_human,
-                           "rollout/ep_true_rew": self.episode_true_reward})
+                           "rollout/ep_true_rew": self.episode_true_reward,
+                           "rollout/timestep": (self.t * self.n_envs)})
             if self.human_model.writer:
-                self.human_model.writer.add_scalar("rollout/ep_human_rew", self.episode_reward_human, self.episode_count)
-                self.human_model.writer.add_scalar("rollout/ep_true_rew", self.episode_true_reward, self.episode_count)
+                self.human_model.writer.add_scalar("rollout/ep_human_rew", self.episode_reward_human, self.t * self.n_envs)
+                self.human_model.writer.add_scalar("rollout/ep_true_rew", self.episode_true_reward, self.t * self.n_envs)
 
             self.episode_reward_human = 0
             self.episode_true_reward = 0
-            self.episode_count += 1
 
+        self.t += 1
         return next_state, reward, done, info
 
     def get_human_reward_observation(self, action):

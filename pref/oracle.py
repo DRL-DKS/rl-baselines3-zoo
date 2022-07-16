@@ -3,6 +3,7 @@ import collections
 import gym
 import numpy as np
 import torch
+import wandb
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -275,8 +276,15 @@ class HumanCritic:
 
             episode_loss = (running_loss / len(dataset))
             episode_accuracy = (running_accuracy / len(dataset))
-            self.writer.add_scalar("reward/loss", episode_loss, self.updates)
-            self.writer.add_scalar("reward/accuracy", episode_accuracy, self.updates)
+
+            if self.writer:
+                self.writer.add_scalar("reward/loss", episode_loss, self.updates)
+                self.writer.add_scalar("reward/accuracy", episode_accuracy, self.updates)
+            if wandb.run is not None:
+                wandb.log({"reward/loss": episode_loss,
+                           "reward/accuracy": episode_accuracy,
+                           "reward/updates": self.updates
+                           })
             self.updates += 1
 
             losses.append(episode_loss)
@@ -325,13 +333,15 @@ class HumanCritic:
                     episode_approve_reward += approve_reward
                     episode_punishment_reward += punishment_reward
 
-                    regularization_approve = abs(2 - approve_reward) * 0.5  # 2 = 1 + 0.5 + 0.5^2 + 0.5^3 geometric sum
-                    regularization_punishment = abs(2 + punishment_reward)
+                    regularization_approve = abs(2 - approve_reward)  # 2 = 1 + 0.5 + 0.5^2 + 0.5^3 geometric sum
+                    regularization_punishment = abs(2 + punishment_reward) * 0.3
                     running_regularization_loss_punishment += regularization_punishment
                     running_regularization_loss_approve += regularization_approve
 
+                    prefs = torch.max(prefs, 1)[1]  # TODO: Seems to be a problem with UnityEnv
                     loss = loss_fn(rss, prefs) + regularization_approve + regularization_punishment
                 else:
+                    prefs = torch.max(prefs, 1)[1]  # TODO: Seems to be a problem with UnityEnv
                     loss = loss_fn(rss, prefs)
                 running_loss += loss.detach().numpy().item()
                 running_accuracy += accuracy
@@ -352,12 +362,22 @@ class HumanCritic:
             episode_accuracy = (running_accuracy / len(dataset))
             episode_regularization_loss_punishment = (running_regularization_loss_punishment / len(dataset))
             episode_regularization_loss_approve = (running_regularization_loss_approve / len(dataset))
-            self.writer.add_scalar("reward/loss", episode_loss, self.updates)
-            self.writer.add_scalar("reward/approvements_total_reward", episode_approve_reward / len(dataset), self.updates)
-            self.writer.add_scalar("reward/punishment_total_reward", episode_punishment_reward / len(dataset), self.updates)
-            self.writer.add_scalar("reward/accuracy", episode_accuracy, self.updates)
-            self.writer.add_scalar("reward/regularization_punishment", episode_regularization_loss_punishment, self.updates)
-            self.writer.add_scalar("reward/regularization_approve", episode_regularization_loss_approve, self.updates)
+            if self.writer:
+                self.writer.add_scalar("reward/loss", episode_loss, self.updates)
+                self.writer.add_scalar("reward/approvements_reward", episode_approve_reward / len(dataset), self.updates)
+                self.writer.add_scalar("reward/punishment_reward", episode_punishment_reward / len(dataset), self.updates)
+                self.writer.add_scalar("reward/accuracy", episode_accuracy, self.updates)
+                self.writer.add_scalar("reward/punishment_loss", episode_regularization_loss_punishment, self.updates)
+                self.writer.add_scalar("reward/approve_loss", episode_regularization_loss_approve, self.updates)
+            if wandb.run is not None:
+                wandb.log({"reward/loss": episode_loss,
+                           "reward/accuracy": episode_accuracy,
+                           "reward/approvements_reward": episode_approve_reward / len(dataset),
+                           "reward/punishment_reward": episode_punishment_reward / len(dataset),
+                           "reward/punishment_loss": episode_regularization_loss_punishment,
+                           "reward/approve_loss": episode_regularization_loss_approve,
+                           "reward/updates": self.updates
+                           })
             self.updates += 1
 
         return meta_data

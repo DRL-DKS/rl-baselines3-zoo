@@ -12,6 +12,8 @@ import numpy as np
 import optuna
 import torch as th
 import yaml
+from mlagents_envs.environment import UnityEnvironment
+from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 from optuna.integration.skopt import SkoptSampler
 from optuna.pruners import BasePruner, MedianPruner, NopPruner, SuccessiveHalvingPruner
 from optuna.samplers import BaseSampler, RandomSampler, TPESampler
@@ -51,6 +53,8 @@ from utils.callbacks import SaveVecNormalizeCallback, TrialEvalCallback
 from utils.hyperparams_opt import HYPERPARAMS_SAMPLER
 from utils.utils import ALGOS, get_callback_list, get_latest_run_id, get_wrapper_class, linear_schedule, \
     get_preference_callbacks, get_preference_wrappers, get_preference_human_critic
+from utils.wrappers import HumanReward
+from gym_unity.envs import UnityToGymWrapper
 
 
 class ExperimentManager:
@@ -133,7 +137,7 @@ class ExperimentManager:
         self.continue_training = trained_agent.endswith(".zip") and os.path.isfile(trained_agent)
         self.truncate_last_trajectory = truncate_last_trajectory
 
-        self._is_atari = self.is_atari(env_id)
+        self._is_atari = False # self.is_atari(env_id)
         # Hyperparameter optimization config
         self.optimize_hyperparameters = optimize_hyperparameters
         self.storage = storage
@@ -148,7 +152,7 @@ class ExperimentManager:
         self.pruner = pruner
         self.n_startup_trials = n_startup_trials
         self.n_evaluations = n_evaluations
-        self.deterministic_eval = not self.is_atari(self.env_id)
+        self.deterministic_eval = not self._is_atari # not self.is_atari(self.env_id)
         self.device = device
 
         # Logging
@@ -382,7 +386,7 @@ class ExperimentManager:
             if hyperparams["pref_learning"]["active"]:
                 hc = get_preference_human_critic(hyperparams, self.env_id)
                 pref_callbacks = get_preference_callbacks(hyperparams, hc, self.env_id)
-                pref_wrappers = get_preference_wrappers(hyperparams, hc, self.env_id)
+                pref_wrappers = get_preference_wrappers(hyperparams, hc, self.env_id, self.n_envs)
             del hyperparams["pref_learning"]
 
 
@@ -543,18 +547,43 @@ class ExperimentManager:
         # Do not log eval env (issue with writing the same file)
         log_dir = None if eval_env or no_log else self.save_path
 
+        # wrappers = self.env_wrapper
+        # if eval_env:
+        #     if isinstance(wrappers, HumanReward):
+        #         wrappers = wrappers.env
+        #     else:
+        #         post_wrapper = wrappers
+        #         future_wrapper = post_wrapper.env
+        #         while future_wrapper:
+        #             if isinstance(future_wrapper, HumanReward):
+        #                 post_wrapper.env = future_wrapper.env
+        #                 break
+        #             post_wrapper = future_wrapper
+        #             future_wrapper = future_wrapper.env
+
         monitor_kwargs = {}
         # Special case for GoalEnvs: log success rate too
-        if "Neck" in self.env_id or self.is_robotics_env(self.env_id) or "parking-v0" in self.env_id:
-            monitor_kwargs = dict(info_keywords=("is_success",))
+        # if "Neck" in self.env_id or self.is_robotics_env(self.env_id) or "parking-v0" in self.env_id:
+        #     monitor_kwargs = dict(info_keywords=("is_success",))
+
+        env_id = self.env_id
+        env_kwargs = self.env_kwargs
+        if self.env_id == "Social-Nav-v1":
+            channel = EngineConfigurationChannel()
+            worker_id = 1 if eval_env else 0
+            unity_env = UnityEnvironment('envs/snappy_rays', side_channels=[channel], worker_id=worker_id, no_graphics=True)
+            channel.set_configuration_parameters(time_scale=30.0)
+            env_id = UnityToGymWrapper
+            env_kwargs = {"unity_env": unity_env, "uint8_visual": False, "allow_multiple_obs": False}
+            # set env_id = Unityenv
 
         # On most env, SubprocVecEnv does not help and is quite memory hungry
         # therefore we use DummyVecEnv by default
         env = make_vec_env(
-            env_id=self.env_id,
+            env_id=env_id,
             n_envs=n_envs,
             seed=self.seed,
-            env_kwargs=self.env_kwargs,
+            env_kwargs=env_kwargs,
             monitor_dir=log_dir,
             wrapper_class=self.env_wrapper,
             vec_env_cls=self.vec_env_class,
