@@ -1,4 +1,5 @@
 import collections
+import math
 
 import gym
 import numpy as np
@@ -131,8 +132,10 @@ class HumanCritic:
         elif env_name == 'Hopper-v3':
             return self.get_query_results_reward_hopper
         elif env_name == 'unity-env':
-            print("Socialnav reward oracle")
             return self.get_query_results_reward_socialnav
+        elif env_name == 'Social-Nav-v1':
+            print("Uses Social-Nav-v1 reward oracle")
+            return self.get_query_results_reward_socialnav_v2
         else:
             return self.get_query_results_reward
 
@@ -141,7 +144,7 @@ class HumanCritic:
         self.reward_model = HumanRewardNetwork(self.obs_size[0] + self.action_size, self.SIZES)
 
         # ==OPTIMIZER==
-        self.optimizer = torch.optim.Adam(self.reward_model.parameters(), lr=self.LEARNING_RATE)
+        self.optimizer = torch.optim.Adam(self.reward_model.parameters(), lr=self.LEARNING_RATE, weight_decay=0.00001)
 
     def clear_segment(self):
         self.segments = [None] * self.maximum_segment_buffer
@@ -306,6 +309,7 @@ class HumanCritic:
             episode_punishment_reward = 0
 
             for step, (o1, o2, prefs, critical_points) in enumerate(dataset):
+                print(o1.shape)
                 loss = 0.0
                 self.optimizer.zero_grad()
                 o1_unrolled = torch.reshape(o1, [-1, self.obs_size[0] + self.action_size])
@@ -319,7 +323,6 @@ class HumanCritic:
 
                 rs1 = torch.sum(r1_rolled, dim=1)
                 rs2 = torch.sum(r2_rolled, dim=1)
-
                 rss = torch.stack([rs1, rs2])
                 rss = torch.t(rss)
 
@@ -327,21 +330,25 @@ class HumanCritic:
                 preds_correct = torch.eq(torch.argmax(prefs, 1), torch.argmax(preds, 1)).type(torch.float32)
                 accuracy = torch.mean(preds_correct)
 
-                loss_fn = nn.CrossEntropyLoss(reduction="sum")
+                #loss_fn = nn.CrossEntropyLoss(reduction="sum")
+                loss_fn = nn.BCEWithLogitsLoss(reduction="sum")
+                approve_reward, punishment_reward = self.get_critical_points_rewards(critical_points, prefs, r1_rolled,
+                                                                                     r2_rolled)
+                episode_approve_reward += approve_reward
+                episode_punishment_reward += punishment_reward
+
                 if self.regularize:
-                    approve_reward, punishment_reward = self.get_critical_points_rewards(critical_points, prefs, r1_rolled, r2_rolled)
-                    episode_approve_reward += approve_reward
-                    episode_punishment_reward += punishment_reward
-
                     regularization_approve = abs(2 - approve_reward)  # 2 = 1 + 0.5 + 0.5^2 + 0.5^3 geometric sum
-                    regularization_punishment = abs(2 + punishment_reward) * 0.3
-                    running_regularization_loss_punishment += regularization_punishment
+                    regularization_punishment = abs(2 + punishment_reward)
                     running_regularization_loss_approve += regularization_approve
+                    running_regularization_loss_punishment += regularization_punishment
 
-                    prefs = torch.max(prefs, 1)[1]  # TODO: Seems to be a problem with UnityEnv
-                    loss = loss_fn(rss, prefs) + regularization_approve + regularization_punishment
+                    #running_regularization_loss_punishment += punishment_reward
+                    #running_regularization_loss_approve += approve_reward
+                    #prefs = torch.max(prefs, 1)[1]  # TODO: Seems to be a problem with UnityEnv
+                    loss = loss_fn(rss, prefs) * 0.5 + regularization_approve + punishment_reward #+ ((regularization_approve * 100.0) + (regularization_punishment * 0.0))
                 else:
-                    prefs = torch.max(prefs, 1)[1]  # TODO: Seems to be a problem with UnityEnv
+                    #prefs = torch.max(prefs, 1)[1]  # TODO: Seems to be a problem with UnityEnv
                     loss = loss_fn(rss, prefs)
                 running_loss += loss.detach().numpy().item()
                 running_accuracy += accuracy
@@ -387,10 +394,10 @@ class HumanCritic:
         critical_points_discounted_reward_approve = torch.zeros_like(r1_rolled)
         for i in range(len(prefs)):
             if prefs[i][0] == 1:
-                critical_points_discounted_reward_punishment[i] = r1_rolled[i] * critical_points[i, :, 0]
+                critical_points_discounted_reward_punishment[i] = r2_rolled[i] * critical_points[i, :, 0]
                 critical_points_discounted_reward_approve[i] = r1_rolled[i] * critical_points[i, :, 1]
             if prefs[i][1] == 1:
-                critical_points_discounted_reward_punishment[i] = r2_rolled[i] * critical_points[i, :, 0]
+                critical_points_discounted_reward_punishment[i] = r1_rolled[i] * critical_points[i, :, 0]
                 critical_points_discounted_reward_approve[i] = r2_rolled[i] * critical_points[i, :, 1]
 
         punishments_in_batch = torch.sum(critical_points[:, :, 0] == 1).item()
@@ -437,13 +444,13 @@ class HumanCritic:
 
             if pos_index != -1:
                 current_pos_discount = self.pos_discount_start_multiplier
-                for j in reversed(range(max(0, neg_index - 10), pos_index)):
+                for j in reversed(range(max(0, pos_index - 5), pos_index + 1)):
                     rolled_critical_points[i][j][1] = max(current_pos_discount, self.min_pos_discount)
                     current_pos_discount *= self.pos_discount
 
             if neg_index != -1:
                 current_neg_discount = self.neg_discount_start_multiplier
-                for j in reversed(range(max(0, neg_index - 10), neg_index)):
+                for j in reversed(range(max(0, neg_index - 5), neg_index + 1)):
                     rolled_critical_points[i][j][0] = max(current_neg_discount, self.min_neg_discount)
                     current_neg_discount *= self.neg_discount
         critical_points = np.asarray(rolled_critical_points).astype('float32')
@@ -490,8 +497,40 @@ class HumanCritic:
     def generate_preference_pairs_with_critical_points(self, trajectories, critical_points, number_of_queries=200, truth=100):
         for _ in range(number_of_queries):
             segments, points = self.random_sample_batch_segments_with_critical_points(trajectories, critical_points, number_of_sampled_segments=2)
-            query = self.get_query_results_reward_with_critical_points(segments[0], segments[1], points, truth)
+            query = self.oracle_reward_function(segments[0], segments[1], truth, points)
             self.add_pairs_with_critical_points(query[0], query[1], query[2], query[3])
+
+    def generate_preference_pairs_information_based(self, trajectories, critical_points, number_of_queries=200, truth=100, uncertain_ratio=0.8):
+        rewards = []
+        for i in range(len(trajectories)):
+            trajectory = trajectories[i][0]
+            trajectory = torch.as_tensor(trajectory, dtype=torch.float32)
+            rew_unrolled = self.reward_model(trajectory)
+            rs = torch.sum(rew_unrolled).item()
+            rewards.append([rs, i])
+        mean = sum([rew[0] for rew in rewards]) / len(rewards)
+        rewards = sorted(rewards, key=lambda rew: abs(rew[0] - mean))
+
+        indexes = set()
+
+        uniform_segments = round(number_of_queries * 5 * (1-uncertain_ratio))
+        idxs = sample(range(len(trajectories)), uniform_segments)
+        for idx in idxs:
+            indexes.add(idx)
+
+        uncertain_segments = round(number_of_queries * 5 * uncertain_ratio)
+        for i in range(uncertain_segments):
+            indexes.add(rewards[i][1])
+
+        indexes = list(indexes)
+        trajectories = [trajectories[idx] for idx in indexes]
+        critical_points = [critical_points[idx] for idx in indexes]
+
+        for _ in range(number_of_queries):
+            segments, points = self.random_sample_batch_segments_with_critical_points(trajectories, critical_points, number_of_sampled_segments=2)
+            query = self.oracle_reward_function(segments[0], segments[1], truth, points)
+            self.add_pairs_with_critical_points(query[0], query[1], query[2], query[3])
+
 
     def random_sample_batch_segments(self, trajectories, number_of_sampled_segments=64):
         idxs = sample(range(len(trajectories)), number_of_sampled_segments)
@@ -650,18 +689,139 @@ class HumanCritic:
             raise "Error computing preferences"
         return [segment1, segment2, preference]
 
-    def get_query_results_reward(self, segment1, segment2, truth):
+    def get_query_results_reward_socialnav_v2(self, segment1, segment2, truth, critical_points):
+        closeness_reward1 = 0
+        closeness_reward2 = 0
+        transitions1 = segment1[0]
+        transitions2 = segment2[0]
+
+        obs_len = len(transitions1[0])
+        ray_size = 5
+
+        """
+        start_index = (0 * obs_len)
+        max_reward_sensor1_start = 0
+        max_reward_sensor2_start = 0
+        for ray_index in range(9):
+            saw_goal1 = transitions1[start_index + ray_index * ray_size + 2]
+            saw_goal2 = transitions2[start_index + ray_index * ray_size + 2]
+
+            distance1 = transitions1[start_index + ray_start_index + ray_index * ray_size + 4]
+            distance2 = transitions2[start_index + ray_start_index + ray_index * ray_size + 4]
+
+            max_reward_sensor1_start = max(max_reward_sensor1_start, saw_goal1 * (1 - distance1))
+            max_reward_sensor2_start = max(max_reward_sensor2_start, saw_goal2 * (1 - distance2))
+
+        start_index = (len(transitions1) - 1) * obs_len
+        max_reward_sensor1_final = 0
+        max_reward_sensor2_final = 0
+        for ray_index in range(9):
+            saw_goal1 = transitions1[start_index + ray_index * ray_size + 2]
+            saw_goal2 = transitions2[start_index + ray_index * ray_size + 2]
+
+            distance1 = transitions1[start_index + ray_start_index + ray_index * ray_size + 4]
+            distance2 = transitions2[start_index + ray_start_index + ray_index * ray_size + 4]
+
+            max_reward_sensor1_final = max(max_reward_sensor1_final, saw_goal1 * (1 - distance1))
+            max_reward_sensor2_final = max(max_reward_sensor2_final, saw_goal2 * (1 - distance2))
+        closeness_reward1 = (max_reward_sensor1_start - max_reward_sensor1_final) * 0.2
+        closeness_reward2 = (max_reward_sensor2_start - max_reward_sensor2_final) * 0.2
+
+        for i in range(len(transitions1)):
+            max_reward_sensor1 = 0
+            max_reward_sensor2 = 0
+            min_reward_sensor1 = 0
+            min_reward_sensor2 = 0
+            for ray_index in range(9):
+                saw_goal1 = transitions1[i][ray_index * ray_size + 2]
+                saw_enemy1 = transitions1[i][ray_index * ray_size + 0] + transitions1[i][ray_index * ray_size + 1]
+                saw_goal2 = transitions2[i][ray_index * ray_size + 2]
+                saw_enemy2 = transitions2[i][ray_index * ray_size + 0] + transitions2[i][ray_index * ray_size + 1]
+
+                distance1 = transitions1[i][ray_index * ray_size + 4]
+                distance2 = transitions2[i][ray_index * ray_size + 4]
+
+                max_reward_sensor1 = max(max_reward_sensor1, (saw_goal1 * (1 - distance1)**2) * 0.01)
+                max_reward_sensor2 = max(max_reward_sensor2, (saw_goal2 * (1 - distance2)**2) * 0.01)
+                min_reward_sensor1 = max(min_reward_sensor1, (saw_enemy1 * (1 - distance1) ** 2) * 0.002)
+                min_reward_sensor2 = max(min_reward_sensor2, (saw_enemy2 * (1 - distance2) ** 2) * 0.002)
+            closeness_reward1 += max_reward_sensor1 #- min_reward_sensor1
+            closeness_reward2 += max_reward_sensor2 #- min_reward_sensor2
+
+        # When we have no access to position
+        #closeness_reward1 += sum([abs(transition[-1]) / 1000 for transition in transitions1])
+        #closeness_reward2 += sum([abs(transition[-1]) / 1000 for transition in transitions2])
+
+
+        # When we have access to position
+        closeness_reward1 += sum([transition[-3] / 2000 for transition in transitions1])
+        closeness_reward2 += sum([transition[-3] / 2000 for transition in transitions2])
+
+        # Punish if robot just stands still and do nothing
+        not_moving1 = abs(transitions1[-1][-3] - transitions1[0][-3]) < 1 \
+                      and abs(transitions1[-1][-4] - transitions1[0][-4]) < 1
+
+        not_moving2 = abs(transitions2[-1][-3] - transitions2[0][-3]) < 1 \
+                      and abs(transitions2[-1][-4] - transitions2[0][-4]) < 1
+        closeness_reward1 -= 0.5 if not_moving1 else 0
+        closeness_reward2 -= 0.5 if not_moving2 else 0
+        """
+        """
+        magnitude_x = math.sqrt(transitions1[2] ** 2 + transitions1[3] ** 2)
+        magnitude_z = math.sqrt(transitions1[-2] ** 2 + transitions1[-1] ** 2)
+        dot_product1 = transitions1[-2] * transitions1[2] + transitions1[3] * transitions1[-1]
+        same_direction1 = dot_product1 / (magnitude_x * magnitude_z)
+
+        magnitude_x = math.sqrt(transitions2[2] ** 2 + transitions2[3] ** 2)
+        magnitude_z = math.sqrt(transitions2[-2] ** 2 + transitions2[-1] ** 2)
+        dot_product2 = transitions2[-2] * transitions2[2] + transitions2[3] * transitions2[-1]
+        same_direction2 = dot_product2 / (magnitude_x * magnitude_z)
+        """
+
+        #closeness_reward1 = sum([math.sqrt((transition[4] - transition[0]) ** 2 + (transition[5] - transition[1]) ** 2) for transition in transitions1]) / 1000
+        #closeness_reward2 = sum([math.sqrt((transition[4] - transition[0]) ** 2 + (transition[5] - transition[1]) ** 2) for transition in transitions2]) / 1000
+        closeness_reward1 += sum([1 - transition[6] for transition in transitions1]) / 100
+        closeness_reward2 += sum([1 - transition[6] for transition in transitions2]) / 100
+
+        total_reward_1 = segment1[-1] + closeness_reward1
+        total_reward_2 = segment2[-1] + closeness_reward2
+        truth_percentage = truth / 100.0
+        fakes_percentage = 1 - truth_percentage
+        epsilon = 0.05
+        if segment1[-1] < -0.3 and segment2[-1] < -0.3:
+            preference = [0, 0]
+            point = [-1, -1]
+        elif total_reward_1 > total_reward_2 + epsilon:
+            preference = [1, 0] if fakes_percentage < random.random() else [0, 1]
+            #point = critical_points[0] if preference[0] == 1 else critical_points[1]
+            point = [critical_points[1][0], critical_points[0][1]]
+        elif total_reward_1 + epsilon < total_reward_2:
+            preference = [0, 1] if fakes_percentage < random.random() else [1, 0]
+            #point = critical_points[1] if preference[1] == 1 else critical_points[0]
+            point = [critical_points[0][0], critical_points[1][1]]
+        else:
+            preference = [0.5, 0.5]
+            point = [-1, -1]
+        return [segment1, segment2, preference, point]
+
+    def get_query_results_reward(self, segment1, segment2, truth, critical_points):
         total_reward_1 = segment1[-1]
         total_reward_2 = segment2[-1]
         truth_percentage = truth / 100.0
         fakes_percentage = 1 - truth_percentage
         epsilon = 0.05
-        if total_reward_1 > total_reward_2 + epsilon:
+        if segment1[-1] < -0.3 and segment2[-1] < -0.3:
+            preference = [0, 0]
+            point = [-1, -1]
+        elif total_reward_1 > total_reward_2 + epsilon:
             preference = [1, 0] if fakes_percentage < random.random() else [0, 1]
+            # point = critical_points[0] if preference[0] == 1 else critical_points[1]
+            point = [critical_points[1][0], critical_points[0][1]]
         elif total_reward_1 + epsilon < total_reward_2:
             preference = [0, 1] if fakes_percentage < random.random() else [1, 0]
-        elif abs(total_reward_1 - total_reward_2) <= epsilon:
-            preference = [0.5, 0.5]
+            # point = critical_points[1] if preference[1] == 1 else critical_points[0]
+            point = [critical_points[0][0], critical_points[1][1]]
         else:
-            raise "Error computing preferences"
-        return [segment1, segment2, preference]
+            preference = [0.5, 0.5]
+            point = [-1, -1]
+        return [segment1, segment2, preference, point]

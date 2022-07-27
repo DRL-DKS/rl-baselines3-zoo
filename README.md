@@ -81,7 +81,7 @@ If you don't want to use preference learning, simply change the hyperparameter f
 
 You can also run hyperparameter tuning using the regular commands. For example:
 ~~~
-python train.py --algo ppo --env LunarLanderContinuous-v2 -n 500000 -optimize --n-trials 200 --n-jobs 2 --sampler tpe --pruner median
+python train.py --algo ppo --env LunarLanderContinuous-v2 -n 500000 -optimize --n-trials 300 --n-jobs 2 --sampler tpe --pruner median
 ~~~
 
 

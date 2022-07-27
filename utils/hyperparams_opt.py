@@ -15,17 +15,18 @@ def sample_ppo_params(trial: optuna.Trial) -> Dict[str, Any]:
     :param trial:
     :return:
     """
-    batch_size = trial.suggest_categorical("batch_size", [8, 16, 32, 64, 128, 256, 512])
-    n_steps = trial.suggest_categorical("n_steps", [8, 16, 32, 64, 128, 256, 512, 1024, 2048])
-    gamma = trial.suggest_categorical("gamma", [0.9, 0.95, 0.98, 0.99, 0.995, 0.999, 0.9999])
-    learning_rate = trial.suggest_loguniform("learning_rate", 1e-5, 1)
+    """
+    batch_size = trial.suggest_categorical("batch_size", [64, 128, 256, 512])
+    n_steps = trial.suggest_categorical("n_steps", [128, 256, 512, 1024, 2048])
+    gamma = trial.suggest_categorical("gamma", [0.95, 0.98, 0.99, 0.995])
+    learning_rate = trial.suggest_loguniform("learning_rate", 1e-5, 0.1)
     lr_schedule = "constant"
     # Uncomment to enable learning rate schedule
-    # lr_schedule = trial.suggest_categorical('lr_schedule', ['linear', 'constant'])
-    ent_coef = trial.suggest_loguniform("ent_coef", 0.00000001, 0.1)
-    clip_range = trial.suggest_categorical("clip_range", [0.1, 0.2, 0.3, 0.4])
-    n_epochs = trial.suggest_categorical("n_epochs", [1, 5, 10, 20])
-    gae_lambda = trial.suggest_categorical("gae_lambda", [0.8, 0.9, 0.92, 0.95, 0.98, 0.99, 1.0])
+    lr_schedule = trial.suggest_categorical('lr_schedule', ['linear', 'constant'])
+    ent_coef = trial.suggest_loguniform("ent_coef", 0.00000001, 0.01)
+    clip_range = trial.suggest_categorical("clip_range", [0.1, 0.2, 0.3])
+    n_epochs = trial.suggest_categorical("n_epochs", [5, 10, 20])
+    gae_lambda = trial.suggest_categorical("gae_lambda", [0.95, 0.98, 0.99])
     max_grad_norm = trial.suggest_categorical("max_grad_norm", [0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2, 5])
     vf_coef = trial.suggest_uniform("vf_coef", 0, 1)
     net_arch = trial.suggest_categorical("net_arch", ["small", "medium"])
@@ -34,7 +35,7 @@ def sample_ppo_params(trial: optuna.Trial) -> Dict[str, Any]:
     # Uncomment for gSDE (continuous action)
     # sde_sample_freq = trial.suggest_categorical("sde_sample_freq", [-1, 8, 16, 32, 64, 128, 256])
     # Orthogonal initialization
-    ortho_init = False
+    # ortho_init = False
     # ortho_init = trial.suggest_categorical('ortho_init', [False, True])
     # activation_fn = trial.suggest_categorical('activation_fn', ['tanh', 'relu', 'elu', 'leaky_relu'])
     activation_fn = trial.suggest_categorical("activation_fn", ["tanh", "relu"])
@@ -49,25 +50,23 @@ def sample_ppo_params(trial: optuna.Trial) -> Dict[str, Any]:
     # Independent networks usually work best
     # when not working with images
     net_arch = {
-        "small": [dict(pi=[64, 64], vf=[64, 64])],
+        "small": [dict(pi=[128, 128], vf=[129, 128])],
         "medium": [dict(pi=[256, 256], vf=[256, 256])],
     }[net_arch]
 
     activation_fn = {"tanh": nn.Tanh, "relu": nn.ReLU, "elu": nn.ELU, "leaky_relu": nn.LeakyReLU}[activation_fn]
-
+    """
     # Preference part
     # Human Critic
     maximum_segment_buffer = trial.suggest_categorical("hc_maximum_segment_buffer", [10000, 100000, 1000000])
     maximum_preference_buffer = trial.suggest_categorical("hc_maximum_preference_buffer", [100, 1000, 1000000])
     hc_batch_size = trial.suggest_categorical("hc_batch_size", [32, 64, 128, 256])
-    traj_k_lenght = trial.suggest_categorical("hc_btraj_k_lenght", [5, 10, 25, 50])
+    traj_k_lenght = trial.suggest_categorical("hc_btraj_k_lenght", [10, 25, 50])
 
-    hc_net_arch = trial.suggest_categorical("hc_net_arch", ["mini", "small", "medium-small", "medium", "large"])
+    hc_net_arch = trial.suggest_categorical("hc_net_arch", ["small", "medium", "large"])
     hc_net_arch = {
-        "mini": [dict(pi=[32, 32], vf=[32, 32])],
         "small": [dict(pi=[64, 64], vf=[64, 64])],
-        "medium-small": [dict(pi=[128, 128], vf=[128, 128])],
-        "medium": [dict(pi=[256, 256], vf=[256, 256])],
+        "medium": [dict(pi=[128, 128], vf=[128, 128])],
         "large": [dict(pi=[256, 256, 256], vf=[256, 256, 256])]
     }[hc_net_arch]
 
@@ -97,26 +96,28 @@ def sample_ppo_params(trial: optuna.Trial) -> Dict[str, Any]:
     }
 
     return {
-        "n_steps": n_steps,
-        "batch_size": batch_size,
-        "gamma": gamma,
-        "learning_rate": learning_rate,
-        "ent_coef": ent_coef,
-        "clip_range": clip_range,
-        "n_epochs": n_epochs,
-        "gae_lambda": gae_lambda,
-        "max_grad_norm": max_grad_norm,
-        "vf_coef": vf_coef,
-        # "sde_sample_freq": sde_sample_freq,
-        "policy_kwargs": dict(
-            # log_std_init=log_std_init,
-            net_arch=net_arch,
-            activation_fn=activation_fn,
-            ortho_init=ortho_init,
-        ),
         "hc": hc,
         "pref": pref
     }
+
+    # return {
+    #     "n_steps": n_steps,
+    #     "batch_size": batch_size,
+    #     "gamma": gamma,
+    #     "learning_rate": learning_rate,
+    #     "ent_coef": ent_coef,
+    #     "clip_range": clip_range,
+    #     "n_epochs": n_epochs,
+    #     "gae_lambda": gae_lambda,
+    #     "max_grad_norm": max_grad_norm,
+    #     "vf_coef": vf_coef,
+    #     # "sde_sample_freq": sde_sample_freq,
+    #     "policy_kwargs": dict(
+    #         # log_std_init=log_std_init,
+    #         net_arch=net_arch,
+    #         activation_fn=activation_fn
+    #     )
+    # }
 
 
 def sample_trpo_params(trial: optuna.Trial) -> Dict[str, Any]:

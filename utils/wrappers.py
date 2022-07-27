@@ -1,4 +1,5 @@
 import collections
+import math
 
 import gym
 import numpy as np
@@ -395,11 +396,19 @@ class HumanReward(gym.Wrapper):
         self.human_model = hc
         self.t = 0
         self.n_envs = n_envs
+        self.successes = collections.deque(maxlen=20)
 
     def step(self, action):
         observation = self.get_human_reward_observation(action)
 
         next_state, reward, done, info = self.env.step(action)
+
+        if reward >= 1.0 and done:
+            self.successes.append(1)
+            print(1 - observation[0][6])
+        elif done:
+            self.successes.append(0)
+
         self.episode_true_reward += reward
 
         reward_human = self.human_model.reward_model(observation)[0].detach().numpy().item()
@@ -408,13 +417,16 @@ class HumanReward(gym.Wrapper):
         self.current_state = next_state
 
         if done:
+            success_rate = sum(self.successes) / len(self.successes)
             if wandb.run is not None:
                 wandb.log({"rollout/ep_human_rew": self.episode_reward_human,
                            "rollout/ep_true_rew": self.episode_true_reward,
-                           "rollout/timestep": (self.t * self.n_envs)})
+                           "rollout/timestep": (self.t * self.n_envs),
+                           "rollout/success_rate": success_rate})
             if self.human_model.writer:
                 self.human_model.writer.add_scalar("rollout/ep_human_rew", self.episode_reward_human, self.t * self.n_envs)
                 self.human_model.writer.add_scalar("rollout/ep_true_rew", self.episode_true_reward, self.t * self.n_envs)
+                self.human_model.writer.add_scalar("rollout/success_rate", success_rate, self.t * self.n_envs)
 
             self.episode_reward_human = 0
             self.episode_true_reward = 0

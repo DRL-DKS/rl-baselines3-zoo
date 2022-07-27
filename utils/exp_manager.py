@@ -1,6 +1,7 @@
 import argparse
 import os
 import pickle as pkl
+import random
 import time
 import warnings
 from collections import OrderedDict
@@ -48,6 +49,7 @@ from torch import nn as nn  # noqa: F401
 import utils.import_envs  # noqa: F401 pytype: disable=import-error
 from pref.callbacks import UpdateRewardFunction
 from pref.oracle import HumanCritic
+from pref.sidechannels import RecordingSideChannel
 from pref.utils import get_env_dimensions
 from utils.callbacks import SaveVecNormalizeCallback, TrialEvalCallback
 from utils.hyperparams_opt import HYPERPARAMS_SAMPLER
@@ -191,6 +193,7 @@ class ExperimentManager:
         if self.continue_training:
             model = self._load_pretrained_agent(self._hyperparams, env)
         elif self.optimize_hyperparameters:
+            env.close()
             return None
         else:
             # Train an agent from scratch
@@ -570,12 +573,14 @@ class ExperimentManager:
         env_kwargs = self.env_kwargs
         if self.env_id == "Social-Nav-v1":
             channel = EngineConfigurationChannel()
-            worker_id = 1 if eval_env else 0
-            unity_env = UnityEnvironment('envs/snappy_rays', side_channels=[channel], worker_id=worker_id, no_graphics=True)
+            #recording_channel = RecordingSideChannel()
+
+            worker_id = random.randint(0, 20000) if eval_env else random.randint(30000, 60000)
+            unity_env = UnityEnvironment('envs/socialnav_supersimple/socialnav1', side_channels=[channel], worker_id=worker_id, no_graphics=False)
             channel.set_configuration_parameters(time_scale=30.0)
             env_id = UnityToGymWrapper
             env_kwargs = {"unity_env": unity_env, "uint8_visual": False, "allow_multiple_obs": False}
-            # set env_id = Unityenv
+            #recording_channel.send_string("Testing channel")
 
         # On most env, SubprocVecEnv does not help and is quite memory hungry
         # therefore we use DummyVecEnv by default
@@ -590,6 +595,8 @@ class ExperimentManager:
             vec_env_kwargs=self.vec_env_kwargs,
             monitor_kwargs=monitor_kwargs,
         )
+        print("actions")
+        print(env.action_space)
 
         if self.vec_env_wrapper is not None:
             env = self.vec_env_wrapper(env)
@@ -697,7 +704,8 @@ class ExperimentManager:
 
         # TODO perform preference learning hyperparameter tuning
         pref_callback = None
-        if self.algo == "ppo":
+        if self.algo == "ppo" and "hc" in kwargs:
+            print("Should enter here")
             # 1. Get the pref-specific kwargs
             hc = kwargs["hc"]
             pref = kwargs["pref"]
