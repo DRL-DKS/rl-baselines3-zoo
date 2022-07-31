@@ -18,6 +18,8 @@ def mlp(sizes, activation, output_activation=nn.Identity):
     for j in range(len(sizes) - 1):
         act = activation if j < len(sizes) - 2 else output_activation
         layers += [nn.Linear(sizes[j], sizes[j + 1]), act()]
+        if j < len(sizes) - 2:
+            layers += [nn.Dropout(0.5 if j > 0 else 0.2)]
     return nn.Sequential(*layers)
 
 
@@ -46,6 +48,8 @@ class HumanCritic:
                  batch_size=32,
                  hidden_sizes=(64, 64),
                  traj_k_lenght=100,
+                 weight_decay=0.0,
+                 learning_rate=0.0003,
                  regularize=False,
                  env_name=None,
                  custom_oracle=False,
@@ -68,7 +72,10 @@ class HumanCritic:
         self.obs_size = obs_size
         self.action_size = action_size
         self.SIZES = hidden_sizes
+        self.weight_decay = weight_decay
+        self.learning_rate = learning_rate
         self.init_model()  # creates model
+
 
         # === DATASET TRAINING ===
         self.training_epochs = training_epochs  # Default keras fit
@@ -93,12 +100,27 @@ class HumanCritic:
         self.custom_oracle = custom_oracle
         self.oracle_reward_function = self.get_oracle_reward_function(env_name)
 
+        if wandb.run is not None:
+            wandb.define_metric("oracle/pairs")
+            wandb.define_metric("oracle/*", step_metric="oracle/pairs")
+            wandb.define_metric("oracle/total", summary="mean")
+            wandb.define_metric("oracle/closeness", summary="mean")
+            wandb.define_metric("oracle/towards_goal", summary="mean")
+            wandb.define_metric("oracle/end_wall_closeness", summary="mean")
+            wandb.define_metric("oracle/char_closeness", summary="mean")
+            wandb.define_metric("oracle/true_rew", summary="mean")
+
+            wandb.define_metric("reward/updates")
+            wandb.define_metric("reward/*", step_metric="reward/updates")
+
     def update_params(self,
-                 maximum_segment_buffer=1000000,
-                 maximum_preference_buffer=3500,
-                 batch_size=32,
-                 hidden_sizes=(64, 64),
-                 traj_k_lenght=100):
+                      maximum_segment_buffer=1000000,
+                      maximum_preference_buffer=3500,
+                      batch_size=32,
+                      hidden_sizes=(64, 64),
+                      traj_k_lenght=100,
+                      learning_rate=0.0003,
+                      weight_decay=0.00001):
 
         # ===BUFFER===
         self.segments = [None] * maximum_segment_buffer  # lists are very fast for random access
@@ -110,6 +132,8 @@ class HumanCritic:
         self.segments_max_k_len = traj_k_lenght
 
         self.SIZES = hidden_sizes
+        self.weight_decay = weight_decay
+        self.learning_rate = learning_rate
         self.init_model()
 
         self.batch_size = batch_size
@@ -144,7 +168,7 @@ class HumanCritic:
         self.reward_model = HumanRewardNetwork(self.obs_size[0] + self.action_size, self.SIZES)
 
         # ==OPTIMIZER==
-        self.optimizer = torch.optim.Adam(self.reward_model.parameters(), lr=self.LEARNING_RATE, weight_decay=0.00001)
+        self.optimizer = torch.optim.Adam(self.reward_model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
 
     def clear_segment(self):
         self.segments = [None] * self.maximum_segment_buffer
@@ -297,8 +321,14 @@ class HumanCritic:
         return meta_data
 
     def train_dataset_with_critical_points(self, dataset, meta_data, epochs_override=-1):
+        max_regularization_sum = 0
+        reg_sum = 1
+        for i in range(5):
+            max_regularization_sum += reg_sum
+            reg_sum = reg_sum * 0.5
 
         epochs = epochs_override if epochs_override != -1 else self.training_epochs
+        self.reward_model.train(True)
         for epoch in range(1, epochs + 1):
 
             running_loss = 0
@@ -307,9 +337,10 @@ class HumanCritic:
             running_regularization_loss_approve = 0
             episode_approve_reward = 0
             episode_punishment_reward = 0
+            episode_punishments = 0
+            episode_approvements = 0
 
             for step, (o1, o2, prefs, critical_points) in enumerate(dataset):
-                print(o1.shape)
                 loss = 0.0
                 self.optimizer.zero_grad()
                 o1_unrolled = torch.reshape(o1, [-1, self.obs_size[0] + self.action_size])
@@ -332,24 +363,34 @@ class HumanCritic:
 
                 #loss_fn = nn.CrossEntropyLoss(reduction="sum")
                 loss_fn = nn.BCEWithLogitsLoss(reduction="sum")
-                approve_reward, punishment_reward = self.get_critical_points_rewards(critical_points, prefs, r1_rolled,
+                approve_reward, punishment_reward, n_approve, n_punishment = self.get_critical_points_rewards(critical_points, prefs, r1_rolled,
                                                                                      r2_rolled)
+                approve_reward = (approve_reward / n_approve)
+                punishment_reward = (punishment_reward / n_punishment)
                 episode_approve_reward += approve_reward
                 episode_punishment_reward += punishment_reward
+                episode_punishments += n_punishment
+                episode_approvements += n_approve
+
+                # L1 regularization to create sparse representation
+
+                l1_lambda = 0.0001
+                l1_norm = sum(abs(p).sum() for p in self.reward_model.parameters())
 
                 if self.regularize:
-                    regularization_approve = abs(2 - approve_reward)  # 2 = 1 + 0.5 + 0.5^2 + 0.5^3 geometric sum
-                    regularization_punishment = abs(2 + punishment_reward)
-                    running_regularization_loss_approve += regularization_approve
-                    running_regularization_loss_punishment += regularization_punishment
+
+                    #regularization_approve = abs(max_regularization_sum - approve_reward)  # 2 = 1 + 0.5 + 0.5^2 + 0.5^3 geometric sum
+                    #regularization_punishment = abs(max_regularization_sum + punishment_reward)
+                    running_regularization_loss_approve += approve_reward
+                    running_regularization_loss_punishment += punishment_reward
 
                     #running_regularization_loss_punishment += punishment_reward
                     #running_regularization_loss_approve += approve_reward
                     #prefs = torch.max(prefs, 1)[1]  # TODO: Seems to be a problem with UnityEnv
-                    loss = loss_fn(rss, prefs) * 0.5 + regularization_approve + punishment_reward #+ ((regularization_approve * 100.0) + (regularization_punishment * 0.0))
+                    loss = loss_fn(rss, prefs) - approve_reward * 5 + punishment_reward * 5 #+ l1_lambda * l1_norm
                 else:
                     #prefs = torch.max(prefs, 1)[1]  # TODO: Seems to be a problem with UnityEnv
-                    loss = loss_fn(rss, prefs)
+                    loss = loss_fn(rss, prefs) #+ l1_lambda * l1_norm
                 running_loss += loss.detach().numpy().item()
                 running_accuracy += accuracy
 
@@ -383,10 +424,12 @@ class HumanCritic:
                            "reward/punishment_reward": episode_punishment_reward / len(dataset),
                            "reward/punishment_loss": episode_regularization_loss_punishment,
                            "reward/approve_loss": episode_regularization_loss_approve,
+                           "reward/punishments": episode_punishments,
+                           "reward/approvements": episode_approvements,
                            "reward/updates": self.updates
                            })
             self.updates += 1
-
+        self.reward_model.train(False)
         return meta_data
 
     def get_critical_points_rewards(self, critical_points, prefs, r1_rolled, r2_rolled):
@@ -406,9 +449,9 @@ class HumanCritic:
         punishments_in_batch = punishments_in_batch if punishments_in_batch != 0 else 1
         approvements_in_batch = approvements_in_batch if approvements_in_batch != 0 else 1
 
-        punishment_reward = torch.sum(critical_points_discounted_reward_punishment) / punishments_in_batch
-        approve_reward = torch.sum(critical_points_discounted_reward_approve) / approvements_in_batch
-        return approve_reward, punishment_reward
+        punishment_reward = torch.sum(critical_points_discounted_reward_punishment) #/ punishments_in_batch
+        approve_reward = torch.sum(critical_points_discounted_reward_approve) #/ approvements_in_batch
+        return approve_reward, punishment_reward, approvements_in_batch, punishments_in_batch
 
     def generate_data_for_training(self, queries):
         queries = np.array(queries, dtype=object)
@@ -500,7 +543,7 @@ class HumanCritic:
             query = self.oracle_reward_function(segments[0], segments[1], truth, points)
             self.add_pairs_with_critical_points(query[0], query[1], query[2], query[3])
 
-    def generate_preference_pairs_information_based(self, trajectories, critical_points, number_of_queries=200, truth=100, uncertain_ratio=0.8):
+    def generate_preference_pairs_information_based(self, trajectories, critical_points, number_of_queries=200, truth=100, uncertain_ratio=0.7):
         rewards = []
         for i in range(len(trajectories)):
             trajectory = trajectories[i][0]
@@ -778,13 +821,49 @@ class HumanCritic:
         same_direction2 = dot_product2 / (magnitude_x * magnitude_z)
         """
 
+        def vector_of_segment(start, end):
+            a, b = start
+            c, d = end
+            return (c - a, d - b)
+
+        def scalar_product(u, v):
+            a, b = u
+            c, d = v
+            return a * c + b * d
+
+        def norm(u):
+            return math.sqrt(scalar_product(u, u))
+
+        def cosine_similarity(u, v):
+            return scalar_product(u, v) / (norm(u) * norm(v))
+
+        def cosine_similarity_of_roads(line1, line2):
+            u = vector_of_segment(*line1)
+            v = vector_of_segment(*line2)
+            return cosine_similarity(u, v)
+
+
         #closeness_reward1 = sum([math.sqrt((transition[4] - transition[0]) ** 2 + (transition[5] - transition[1]) ** 2) for transition in transitions1]) / 1000
         #closeness_reward2 = sum([math.sqrt((transition[4] - transition[0]) ** 2 + (transition[5] - transition[1]) ** 2) for transition in transitions2]) / 1000
-        closeness_reward1 += sum([1 - transition[6] for transition in transitions1]) / 100
-        closeness_reward2 += sum([1 - transition[6] for transition in transitions2]) / 100
+        closeness_rew1 = (sum([max(0, 1 - transition[4]) ** 2 for transition in transitions1]) / 10) * 0.1
+        closeness_rew2 = (sum([max(0, 1 - transition[4]) ** 2 for transition in transitions2]) / 10) * 0.1
 
-        total_reward_1 = segment1[-1] + closeness_reward1
-        total_reward_2 = segment2[-1] + closeness_reward2
+        moving_towards_goal_rew1 = (transitions1[0][4] - transitions1[-1][4]) * 0.7
+        moving_towards_goal_rew2 = (transitions2[0][4] - transitions2[-1][4]) * 0.7
+
+        wall_closeness_rew1 = -(sum([max(0, transition[1] - 0.8) for transition in transitions1]) / 10) * 0.1
+        wall_closeness_rew1 += -(sum([max(0, abs(transition[0]) - 0.9) for transition in transitions1]) / 10) * 0.1
+        wall_closeness_rew2 = -(sum([max(0, transition[1] - 0.8) for transition in transitions2]) / 10) * 0.1
+        wall_closeness_rew2 += -(sum([max(0, abs(transition[0]) - 0.9) for transition in transitions2]) / 10) * 0.1
+
+        char_closeness_rew1 = -min(0.8, sum([max(0, (1 - transition[11] - 0.8) * 5, (1 - transition[14] - 0.8) * 5) for transition in transitions1]) / 10 * 4)
+        char_closeness_rew2 = -min(0.8, sum([max(0, (1 - transition[11] - 0.8) * 5, (1 - transition[14] - 0.8) * 5) for transition in transitions2]) / 10 * 4)
+
+        #closeness_reward1 -= (sum([max(0, 1 - (transition[11] - 0.75)**2, 1 - (transition[16] - 0.75)**2) for transition in transitions1]) / 50) * 0.1
+        #closeness_reward2 -= (sum([max(0, 1 - (transition[11] - 0.75)**2, 1 - (transition[16] - 0.75)**2) for transition in transitions2]) / 50) * 0.1
+
+        total_reward_1 = segment1[-1] + closeness_rew1 + moving_towards_goal_rew1 + wall_closeness_rew1 + char_closeness_rew1
+        total_reward_2 = segment2[-1] + closeness_rew2 + moving_towards_goal_rew2 + wall_closeness_rew2 + char_closeness_rew2
         truth_percentage = truth / 100.0
         fakes_percentage = 1 - truth_percentage
         epsilon = 0.05
@@ -802,6 +881,17 @@ class HumanCritic:
         else:
             preference = [0.5, 0.5]
             point = [-1, -1]
+
+        if wandb.run is not None:
+            wandb.log({"oracle/total": (total_reward_1 + total_reward_2) / 2,
+                       "oracle/closeness": (closeness_rew1 + closeness_rew2) / 2,
+                       "oracle/towards_goal": (moving_towards_goal_rew1 + moving_towards_goal_rew2) / 2,
+                       "oracle/end_wall_closeness": (wall_closeness_rew1 + wall_closeness_rew1) / 2,
+                       "oracle/char_closeness": (char_closeness_rew1 + char_closeness_rew2) / 2,
+                       "oracle/true_rew": (segment1[-1] + segment2[-1]) / 2,
+                       "oracle/pairs": self.pairs_size
+                       })
+
         return [segment1, segment2, preference, point]
 
     def get_query_results_reward(self, segment1, segment2, truth, critical_points):
@@ -816,11 +906,17 @@ class HumanCritic:
         elif total_reward_1 > total_reward_2 + epsilon:
             preference = [1, 0] if fakes_percentage < random.random() else [0, 1]
             # point = critical_points[0] if preference[0] == 1 else critical_points[1]
-            point = [critical_points[1][0], critical_points[0][1]]
+            if preference[0] == 1:
+                point = [critical_points[1][0], critical_points[0][1]]
+            else:
+                point = [critical_points[0][0], critical_points[1][1]]
         elif total_reward_1 + epsilon < total_reward_2:
             preference = [0, 1] if fakes_percentage < random.random() else [1, 0]
             # point = critical_points[1] if preference[1] == 1 else critical_points[0]
-            point = [critical_points[0][0], critical_points[1][1]]
+            if preference[1] == 1:
+                point = [critical_points[0][0], critical_points[1][1]]
+            else:
+                point = [critical_points[1][0], critical_points[0][1]]
         else:
             preference = [0.5, 0.5]
             point = [-1, -1]

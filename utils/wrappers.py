@@ -405,7 +405,6 @@ class HumanReward(gym.Wrapper):
 
         if reward >= 1.0 and done:
             self.successes.append(1)
-            print(1 - observation[0][6])
         elif done:
             self.successes.append(0)
 

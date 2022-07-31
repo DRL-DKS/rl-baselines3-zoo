@@ -58,16 +58,18 @@ def sample_ppo_params(trial: optuna.Trial) -> Dict[str, Any]:
     """
     # Preference part
     # Human Critic
-    maximum_segment_buffer = trial.suggest_categorical("hc_maximum_segment_buffer", [10000, 100000, 1000000])
-    maximum_preference_buffer = trial.suggest_categorical("hc_maximum_preference_buffer", [100, 1000, 1000000])
-    hc_batch_size = trial.suggest_categorical("hc_batch_size", [32, 64, 128, 256])
-    traj_k_lenght = trial.suggest_categorical("hc_btraj_k_lenght", [10, 25, 50])
+    maximum_segment_buffer = trial.suggest_categorical("hc_maximum_segment_buffer", [5000, 1000000])
+    maximum_preference_buffer = trial.suggest_categorical("hc_maximum_preference_buffer", [1000, 1000000])
+    hc_batch_size = trial.suggest_categorical("hc_batch_size", [64, 128, 256])
+    traj_k_lenght = trial.suggest_categorical("hc_btraj_k_lenght", [10, 20])
+    weight_decay = trial.suggest_loguniform("learning_rate", 0.00001, 0.001)
+    learning_rate = trial.suggest_loguniform("learning_rate", 0.00001, 0.01)
 
     hc_net_arch = trial.suggest_categorical("hc_net_arch", ["small", "medium", "large"])
     hc_net_arch = {
-        "small": [dict(pi=[64, 64], vf=[64, 64])],
-        "medium": [dict(pi=[128, 128], vf=[128, 128])],
-        "large": [dict(pi=[256, 256, 256], vf=[256, 256, 256])]
+        "small": [64, 64],
+        "medium": [256, 256, 256],
+        "large": [512, 512, 512]
     }[hc_net_arch]
 
     hc = {
@@ -75,15 +77,17 @@ def sample_ppo_params(trial: optuna.Trial) -> Dict[str, Any]:
         "maximum_preference_buffer": maximum_preference_buffer,
         "batch_size": hc_batch_size,
         "traj_k_lenght": traj_k_lenght,
-        "hidden_sizes": hc_net_arch
+        "hidden_sizes": hc_net_arch,
+        "weight_decay": weight_decay,
+        "learning_rate": learning_rate
     }
 
     # Loop specific
-    n_queries = trial.suggest_categorical("pref_n_queries", [10, 40, 70])
-    n_initial_queries = trial.suggest_categorical("pref_n_initial_queries", [50, 100, 200])
+    n_queries = trial.suggest_categorical("pref_n_queries", [64, 128, 256])
+    n_initial_queries = trial.suggest_categorical("pref_n_initial_queries", [128, 256])
     initial_reward_estimation_epochs = trial.suggest_categorical("pref_initial_reward_estimation_epochs", [200, 400])
     reward_training_epochs = trial.suggest_categorical("pref_reward_training_epochs", [20, 50, 100])
-    max_queries = trial.suggest_categorical("pref_max_queries", [400, 1400, 2100])
+    max_queries = trial.suggest_categorical("pref_max_queries", [1024, 2048])
     traj_length = traj_k_lenght
 
     pref = {

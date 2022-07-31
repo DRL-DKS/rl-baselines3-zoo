@@ -26,7 +26,7 @@ from sb3_contrib.common.vec_env import AsyncEval
 # For using HER with GoalEnv
 from stable_baselines3 import HerReplayBuffer  # noqa: F401
 from stable_baselines3.common.base_class import BaseAlgorithm
-from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback, EvalCallback
+from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback, EvalCallback, EveryNTimesteps
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.noise import NormalActionNoise, OrnsteinUhlenbeckActionNoise
 from stable_baselines3.common.preprocessing import is_image_space, is_image_space_channels_first
@@ -47,7 +47,7 @@ from torch import nn as nn  # noqa: F401
 
 # Register custom envs
 import utils.import_envs  # noqa: F401 pytype: disable=import-error
-from pref.callbacks import UpdateRewardFunction
+from pref.callbacks import UpdateRewardFunction, UpdateRewardFunctionCriticalPoint
 from pref.oracle import HumanCritic
 from pref.sidechannels import RecordingSideChannel
 from pref.utils import get_env_dimensions
@@ -576,7 +576,7 @@ class ExperimentManager:
             #recording_channel = RecordingSideChannel()
 
             worker_id = random.randint(0, 20000) if eval_env else random.randint(30000, 60000)
-            unity_env = UnityEnvironment('envs/socialnav_supersimple/socialnav1', side_channels=[channel], worker_id=worker_id, no_graphics=False)
+            unity_env = UnityEnvironment('envs/socialnav_supersimple5/socialnav1', side_channels=[channel], worker_id=worker_id, no_graphics=False)
             channel.set_configuration_parameters(time_scale=30.0)
             env_id = UnityToGymWrapper
             env_kwargs = {"unity_env": unity_env, "uint8_visual": False, "allow_multiple_obs": False}
@@ -704,18 +704,19 @@ class ExperimentManager:
 
         # TODO perform preference learning hyperparameter tuning
         pref_callback = None
+        print(self.callbacks)
         if self.algo == "ppo" and "hc" in kwargs:
-            print("Should enter here")
             # 1. Get the pref-specific kwargs
             hc = kwargs["hc"]
             pref = kwargs["pref"]
 
             # 2. Update the callbacks & wrappers
             for callback in self.callbacks:
-                if isinstance(callback, UpdateRewardFunction):
-                    callback.hc.update_params(**hc)
-                    callback.update_params(**pref)
-                    pref_callback = callback
+                if isinstance(callback.callback, (UpdateRewardFunction, UpdateRewardFunctionCriticalPoint)):
+                    print("Should enter here")
+                    callback.callback.hc.update_params(**hc)
+                    callback.callback.update_params(**pref)
+                    pref_callback = [callback]
 
             # 3. Delete them from kwargs
             del kwargs["hc"]
@@ -751,7 +752,7 @@ class ExperimentManager:
         path = None
         if self.optimization_log_path is not None:
             path = os.path.join(self.optimization_log_path, f"trial_{str(trial.number)}")
-        callbacks = get_callback_list({"callback": self.specified_callbacks})
+        callbacks = get_callback_list({"callback": self.specified_callbacks}, pref_callback)
         eval_callback = TrialEvalCallback(
             eval_env,
             trial,
@@ -762,8 +763,8 @@ class ExperimentManager:
             deterministic=self.deterministic_eval,
         )
         callbacks.append(eval_callback)
-        if pref_callback:
-            callbacks.append(pref_callback)
+        #if pref_callback:
+        #    callbacks.append(pref_callback)
 
         learn_kwargs = {}
         # Special case for ARS

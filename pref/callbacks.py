@@ -175,7 +175,7 @@ class UpdateRewardFunction(BaseCallback):
 
         if self.env_name == "Social-Nav-v1":
             channel = EngineConfigurationChannel()
-            unity_env = UnityEnvironment('./envs/socialnav_supersimple/socialnav1', side_channels=[channel], worker_id=42, no_graphics=True)
+            unity_env = UnityEnvironment('./envs/socialnav_supersimple5/socialnav1', side_channels=[channel], worker_id=42, no_graphics=True)
             #unity_env = UnityEnvironment('./envs/fixedsocialnav/socialnav1', side_channels=[channel], worker_id=42, no_graphics=True)
             channel.set_configuration_parameters(time_scale=30.0)
             env = UnityToGymWrapper(unity_env, uint8_visual=False, allow_multiple_obs=False)
@@ -322,10 +322,10 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
 
             traj_to_collect = self.n_queries * 5
             trajectories, critical_points = self.collect_segments_with_critical_points(self.model, 100000, traj_to_collect)
-            trajectories = self.hc.segments[:self.hc.segments_size]
-            #trajectories = self.hc.segments[(self.hc.segments_size - (traj_to_collect * 2)):self.hc.segments_size]
-            #critical_points = self.hc.critical_points[(self.hc.segments_size - (traj_to_collect * 2)):self.hc.segments_size]
-            critical_points = self.hc.critical_points[:self.hc.critical_points_size]
+            #trajectories = self.hc.segments[:self.hc.segments_size]
+            trajectories = self.hc.segments[max(0, (self.hc.segments_size - (traj_to_collect * 5))):self.hc.segments_size]
+            critical_points = self.hc.critical_points[max(0, (self.hc.segments_size - (traj_to_collect * 5))):self.hc.segments_size]
+            #critical_points = self.hc.critical_points[:self.hc.critical_points_size]
 
             self.hc.generate_preference_pairs_with_critical_points(trajectories, critical_points, truth=self.truth, number_of_queries=self.n_queries)
 
@@ -413,15 +413,13 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
         if self.env_name == "Social-Nav-v1":
             channel = EngineConfigurationChannel()
             #unity_env = UnityEnvironment('./envs/fixedsocialnav/socialnav1', side_channels=[channel], worker_id=42, no_graphics=True)
-            unity_env = UnityEnvironment('./envs/socialnav_supersimple/socialnav1', side_channels=[channel], worker_id=42, no_graphics=True)
+            unity_env = UnityEnvironment('./envs/socialnav_supersimple5/socialnav1', side_channels=[channel], worker_id=42, no_graphics=True)
             channel.set_configuration_parameters(time_scale=30.0)
             env = UnityToGymWrapper(unity_env, uint8_visual=False, allow_multiple_obs=False)
             obs = env.reset()
-            print(obs)
         else:
             env = gym.make(self.env_name)
         env.seed(self.seed)
-        print(self.env_name)
 
         for e in range(test_episodes):
             largest_rew = self.largest_rew_threshold
