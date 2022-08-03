@@ -62,8 +62,8 @@ def sample_ppo_params(trial: optuna.Trial) -> Dict[str, Any]:
     maximum_preference_buffer = trial.suggest_categorical("hc_maximum_preference_buffer", [1000, 1000000])
     hc_batch_size = trial.suggest_categorical("hc_batch_size", [64, 128, 256])
     traj_k_lenght = trial.suggest_categorical("hc_btraj_k_lenght", [10, 20])
-    weight_decay = trial.suggest_loguniform("learning_rate", 0.00001, 0.001)
-    learning_rate = trial.suggest_loguniform("learning_rate", 0.00001, 0.01)
+    weight_decay = trial.suggest_loguniform("hc_weight_decay", 0.00001, 0.001)
+    learning_rate = trial.suggest_loguniform("hc_learning_rate", 0.00001, 0.01)
 
     hc_net_arch = trial.suggest_categorical("hc_net_arch", ["small", "medium", "large"])
     hc_net_arch = {

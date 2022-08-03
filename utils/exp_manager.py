@@ -387,6 +387,14 @@ class ExperimentManager:
         pref_wrappers, pref_callbacks = None, []
         if "pref_learning" in hyperparams.keys():
             if hyperparams["pref_learning"]["active"]:
+                if self.args.regularize:
+                    print("Regularize")
+                    hyperparams["pref_learning"]["human_critic"]["regularize"] = self.args.regularize
+                else:
+                    print("No regularize")
+                if self.args.workerid != -1:
+                    callback_name = list(hyperparams["pref_learning"]["callback"][0].keys())[0]
+                    hyperparams["pref_learning"]["callback"][0][callback_name]["workerid"] = self.args.workerid
                 hc = get_preference_human_critic(hyperparams, self.env_id)
                 pref_callbacks = get_preference_callbacks(hyperparams, hc, self.env_id)
                 pref_wrappers = get_preference_wrappers(hyperparams, hc, self.env_id, self.n_envs)
@@ -576,7 +584,9 @@ class ExperimentManager:
             #recording_channel = RecordingSideChannel()
 
             worker_id = random.randint(0, 20000) if eval_env else random.randint(30000, 60000)
-            unity_env = UnityEnvironment('envs/socialnav_supersimple5/socialnav1', side_channels=[channel], worker_id=worker_id, no_graphics=False)
+            if self.args.workerid != -1:
+                worker_id += self.args.workerid
+            unity_env = UnityEnvironment('envs/socialnav_supersimple6/socialnav1', side_channels=[channel], worker_id=worker_id, no_graphics=False)
             channel.set_configuration_parameters(time_scale=30.0)
             env_id = UnityToGymWrapper
             env_kwargs = {"unity_env": unity_env, "uint8_visual": False, "allow_multiple_obs": False}

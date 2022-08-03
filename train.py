@@ -133,6 +133,10 @@ if __name__ == "__main__":  # noqa: C901
     )
     parser.add_argument("--wandb-project-name", type=str, default="sb3", help="the wandb's project name")
     parser.add_argument("--wandb-entity", type=str, default=None, help="the entity (team) of wandb's project")
+
+    parser.add_argument("--regularize", action="store_true", default=False, help="Regularized preference learning")
+    parser.add_argument("--workerid", type=int, default=-1)
+
     args = parser.parse_args()
 
     # Going through custom gym packages to let them register in the global registory

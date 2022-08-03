@@ -387,7 +387,7 @@ class HumanCritic:
                     #running_regularization_loss_punishment += punishment_reward
                     #running_regularization_loss_approve += approve_reward
                     #prefs = torch.max(prefs, 1)[1]  # TODO: Seems to be a problem with UnityEnv
-                    loss = loss_fn(rss, prefs) - approve_reward * 5 + punishment_reward * 5 #+ l1_lambda * l1_norm
+                    loss = loss_fn(rss, prefs) - approve_reward * 10 + punishment_reward * 0.5 #+ l1_lambda * l1_norm
                 else:
                     #prefs = torch.max(prefs, 1)[1]  # TODO: Seems to be a problem with UnityEnv
                     loss = loss_fn(rss, prefs) #+ l1_lambda * l1_norm
@@ -587,7 +587,7 @@ class HumanCritic:
         idxs = sample(range(len(trajectories)), number_of_sampled_segments)
         return [trajectories[idx] for idx in idxs], [critical_points[idx] for idx in idxs]
 
-    def get_query_results_reward_lunar_lander(self, segment1, segment2, truth):
+    def get_query_results_reward_lunar_lander(self, segment1, segment2, truth, critical_points):
         total_reward_1_right = sum([-0.3 if transition[0] < 0 else 0 for transition in segment1[0]])
         total_reward_2_right = sum([-0.3 if transition[0] < 0 else 0 for transition in segment2[0]])
 
@@ -599,13 +599,20 @@ class HumanCritic:
         fakes_percentage = 1 - truth_percentage
         if total_reward_1 > total_reward_2:
             preference = [1, 0] if fakes_percentage < random.random() else [0, 1]
+            if preference[0] == 1:
+                point = [critical_points[1][0], critical_points[0][1]]
+            else:
+                point = [critical_points[0][0], critical_points[1][1]]
         elif total_reward_1 < total_reward_2:
             preference = [0, 1] if fakes_percentage < random.random() else [1, 0]
-        elif abs(total_reward_1 - total_reward_2) < 1:
-            preference = [0.5, 0.5]
+            if preference[1] == 1:
+                point = [critical_points[0][0], critical_points[1][1]]
+            else:
+                point = [critical_points[1][0], critical_points[0][1]]
         else:
-            raise "Error computing preferences"
-        return [segment1, segment2, preference]
+            preference = [0.5, 0.5]
+            point = [-1, -1]
+        return [segment1, segment2, preference, point]
 
     def get_query_results_reward_pendulum(self, segment1, segment2, truth):
         """
@@ -873,11 +880,18 @@ class HumanCritic:
         elif total_reward_1 > total_reward_2 + epsilon:
             preference = [1, 0] if fakes_percentage < random.random() else [0, 1]
             #point = critical_points[0] if preference[0] == 1 else critical_points[1]
-            point = [critical_points[1][0], critical_points[0][1]]
+            if preference[0] == 1:
+                point = [critical_points[1][0], critical_points[0][1]]
+            else:
+                point = [critical_points[0][0], critical_points[1][1]]
+
         elif total_reward_1 + epsilon < total_reward_2:
             preference = [0, 1] if fakes_percentage < random.random() else [1, 0]
             #point = critical_points[1] if preference[1] == 1 else critical_points[0]
-            point = [critical_points[0][0], critical_points[1][1]]
+            if preference[1] == 1:
+                point = [critical_points[0][0], critical_points[1][1]]
+            else:
+                point = [critical_points[1][0], critical_points[0][1]]
         else:
             preference = [0.5, 0.5]
             point = [-1, -1]
@@ -899,11 +913,8 @@ class HumanCritic:
         total_reward_2 = segment2[-1]
         truth_percentage = truth / 100.0
         fakes_percentage = 1 - truth_percentage
-        epsilon = 0.05
-        if segment1[-1] < -0.3 and segment2[-1] < -0.3:
-            preference = [0, 0]
-            point = [-1, -1]
-        elif total_reward_1 > total_reward_2 + epsilon:
+        epsilon = 1
+        if total_reward_1 > total_reward_2 + epsilon:
             preference = [1, 0] if fakes_percentage < random.random() else [0, 1]
             # point = critical_points[0] if preference[0] == 1 else critical_points[1]
             if preference[0] == 1:

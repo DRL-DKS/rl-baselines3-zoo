@@ -175,7 +175,7 @@ class UpdateRewardFunction(BaseCallback):
 
         if self.env_name == "Social-Nav-v1":
             channel = EngineConfigurationChannel()
-            unity_env = UnityEnvironment('./envs/socialnav_supersimple5/socialnav1', side_channels=[channel], worker_id=42, no_graphics=True)
+            unity_env = UnityEnvironment('./envs/socialnav_supersimple6/socialnav1', side_channels=[channel], worker_id=42, no_graphics=True)
             #unity_env = UnityEnvironment('./envs/fixedsocialnav/socialnav1', side_channels=[channel], worker_id=42, no_graphics=True)
             channel.set_configuration_parameters(time_scale=30.0)
             env = UnityToGymWrapper(unity_env, uint8_visual=False, allow_multiple_obs=False)
@@ -281,7 +281,8 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
                  n_initial_queries=200,
                  max_queries=1400,
                  verbose=0,
-                 seed=12345
+                 seed=12345,
+                 workerid=-1
                  ):
         super(UpdateRewardFunctionCriticalPoint, self).__init__(verbose)
         self.n_queries = n_queries
@@ -296,6 +297,7 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
         self.n_initial_queries = n_initial_queries
         self.seed = seed
         self.max_queries = max_queries
+        self.workerid = workerid
 
     def _on_training_start(self) -> None:
         print("Performing initial training of reward model")
@@ -413,7 +415,10 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
         if self.env_name == "Social-Nav-v1":
             channel = EngineConfigurationChannel()
             #unity_env = UnityEnvironment('./envs/fixedsocialnav/socialnav1', side_channels=[channel], worker_id=42, no_graphics=True)
-            unity_env = UnityEnvironment('./envs/socialnav_supersimple5/socialnav1', side_channels=[channel], worker_id=42, no_graphics=True)
+            workerid = 42
+            if self.workerid != -1:
+                workerid = 43
+            unity_env = UnityEnvironment('./envs/socialnav_supersimple6/socialnav1', side_channels=[channel], worker_id=workerid, no_graphics=True)
             channel.set_configuration_parameters(time_scale=30.0)
             env = UnityToGymWrapper(unity_env, uint8_visual=False, allow_multiple_obs=False)
             obs = env.reset()

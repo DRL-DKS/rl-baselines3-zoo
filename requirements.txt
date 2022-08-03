@@ -9,7 +9,7 @@ optuna
 pytablewriter~=0.64
 seaborn
 pyyaml>=5.1
-cloudpickle>=1.5.0
+cloudpickle>=1.2.0
 plotly
 panda-gym==1.1.1 # tmp fix: until compatibility with panda-gym v2
 rliable>=1.0.5
