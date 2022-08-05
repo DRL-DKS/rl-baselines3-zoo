@@ -22,4 +22,4 @@ hub
 
 # DKS ignores
 keys/
-notebooks/
+# notebooks/
