@@ -392,6 +392,18 @@ class ExperimentManager:
                     hyperparams["pref_learning"]["human_critic"]["regularize"] = self.args.regularize
                 else:
                     print("No regularize")
+
+                if self.args.n_queries != -1:
+                    callback_name = list(hyperparams["pref_learning"]["callback"][0].keys())[0]
+                    n_init_queries = hyperparams["pref_learning"]["callback"][0][callback_name]["n_initial_queries"]
+                    total_queries = n_init_queries + self.args.n_queries * 5 * 5 - self.args.n_queries
+                    hyperparams["pref_learning"]["callback"][0][callback_name]["n_queries"] = self.args.n_queries
+                    hyperparams["pref_learning"]["callback"][0][callback_name]["max_queries"] = total_queries
+
+                if self.args.truth != -1:
+                    callback_name = list(hyperparams["pref_learning"]["callback"][0].keys())[0]
+                    hyperparams["pref_learning"]["callback"][0][callback_name]["truth"] = self.args.truth
+
                 if self.args.workerid != -1:
                     callback_name = list(hyperparams["pref_learning"]["callback"][0].keys())[0]
                     hyperparams["pref_learning"]["callback"][0][callback_name]["workerid"] = self.args.workerid
@@ -581,16 +593,15 @@ class ExperimentManager:
         env_kwargs = self.env_kwargs
         if self.env_id == "Social-Nav-v1":
             channel = EngineConfigurationChannel()
-            #recording_channel = RecordingSideChannel()
+            recording_channel = RecordingSideChannel()
 
             worker_id = random.randint(0, 20000) if eval_env else random.randint(30000, 60000)
             if self.args.workerid != -1:
                 worker_id += self.args.workerid
-            unity_env = UnityEnvironment('envs/socialnav_supersimple6/socialnav1', side_channels=[channel], worker_id=worker_id, no_graphics=False)
+            unity_env = UnityEnvironment('envs/socialnav_supersimple6/socialnav1', side_channels=[channel, recording_channel], worker_id=worker_id, no_graphics=False)
             channel.set_configuration_parameters(time_scale=30.0)
             env_id = UnityToGymWrapper
             env_kwargs = {"unity_env": unity_env, "uint8_visual": False, "allow_multiple_obs": False}
-            #recording_channel.send_string("Testing channel")
 
         # On most env, SubprocVecEnv does not help and is quite memory hungry
         # therefore we use DummyVecEnv by default

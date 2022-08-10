@@ -460,3 +460,28 @@ class HumanReward(gym.Wrapper):
     def observation(self, obs):
         self.current_state = obs
         return obs
+
+
+class LunarLanderAvoidTop(gym.Wrapper):
+    """
+    Environment wrapper to replace the env reward function with a human based reward function.
+    In addition, it logs both the env and human reward per episode.
+    """
+
+    def __init__(self, env):
+        super().__init__(env)
+
+    def step(self, action):
+        next_state, reward, done, info = self.env.step(action)
+        if next_state[1] >= 1.5:
+            reward = -25
+        return next_state, reward, done, info
+
+    def reset(self):
+        state = self.env.reset()
+        self.current_state = state
+        return state
+
+    def observation(self, obs):
+        self.current_state = obs
+        return obs

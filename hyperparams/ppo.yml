@@ -144,12 +144,12 @@ Social-Nav-v1:
     active: true
     human_critic:
       maximum_segment_buffer: 1000000
-      maximum_preference_buffer: 320
+      maximum_preference_buffer: 2800
       training_epochs: 10
       batch_size: 128
       hidden_sizes: [ 256, 256, 256 ]
       traj_k_lenght: 10
-      weight_decay: 0.00001
+      weight_decay: 0.0
       learning_rate: 0.0003
       regularize: false
       custom_oracle: true
@@ -160,15 +160,15 @@ Social-Nav-v1:
       - pref.callbacks.UpdateRewardFunctionCriticalPoint:
           human_critic: true
           use_env_name: true
-          n_queries: 32
+          n_queries: 128
           initial_reward_estimation_epochs: 200
           reward_training_epochs: 50
           truth: 90
           traj_length: 10
           smallest_rew_threshold: -0.2
           largest_rew_threshold: 0.2
-          n_initial_queries: 32
-          max_queries: 320
+          n_initial_queries: 128
+          max_queries: 2800
           every_n_timestep: 20000
 #      - pref.callbacks.UpdateRewardFunction:
 #          human_critic: true
@@ -229,7 +229,7 @@ Social-Nav-v1-tuned:
           every_n_timestep: 20000
 
 LunarLanderContinuous-v2:
-  n_envs: 16
+  n_envs: 1
   n_timesteps: !!float 5e5
   policy: 'MlpPolicy'
   n_steps: 1024
@@ -238,6 +238,8 @@ LunarLanderContinuous-v2:
   gamma: 0.999
   n_epochs: 4
   ent_coef: 0.01
+  env_wrapper:
+    - utils.wrappers.LunarLanderAvoidTop
   pref_learning:
     active: true
     human_critic:
@@ -515,7 +517,6 @@ Swimmer-v3:
 # 10 mujoco envs
 
 HalfCheetah-v3:
-  normalize: true
   n_envs: 1
   policy: 'MlpPolicy'
   n_timesteps: !!float 1e6
@@ -539,15 +540,15 @@ HalfCheetah-v3:
     active: true
     human_critic:
       maximum_segment_buffer: 1000000
-      maximum_preference_buffer: 1400
+      maximum_preference_buffer: 2100
       training_epochs: 10
       batch_size: 128
       hidden_sizes: [ 256, 256, 256 ]
       traj_k_lenght: 50
-      weight_decay: 0.00001
+      weight_decay: 0.0
       learning_rate: 0.0003
       regularize: false
-      custom_oracle: true
+      custom_oracle: false
     wrapper:
       - utils.wrappers.HumanReward:
           human_critic: true
@@ -555,15 +556,15 @@ HalfCheetah-v3:
       - pref.callbacks.UpdateRewardFunctionCriticalPoint:
           human_critic: true
           use_env_name: true
-          n_queries: 70
+          n_queries: 40
           initial_reward_estimation_epochs: 200
           reward_training_epochs: 50
           truth: 90
           traj_length: 50
-          smallest_rew_threshold: -1.5
-          largest_rew_threshold: 1.5
-          n_initial_queries: 200
-          max_queries: 1400
+          smallest_rew_threshold: -0.33
+          largest_rew_threshold: 0.33
+          n_initial_queries: 50
+          max_queries: 1000
           every_n_timestep: 20000
 
 # Ant-v3:
@@ -711,3 +712,31 @@ Walker2d-v3:
   gae_lambda: 0.95
   max_grad_norm: 1
   vf_coef: 0.871923
+  pref_learning:
+    active: true
+    human_critic:
+      maximum_segment_buffer: 1000000
+      maximum_preference_buffer: 3500
+      training_epochs: 10
+      batch_size: 64
+      hidden_sizes: [ 256, 256, 256 ]
+      traj_k_lenght: 50
+      regularize: false
+      custom_oracle: false
+    wrapper:
+      - utils.wrappers.HumanReward:
+          human_critic: true
+    callback:
+      - pref.callbacks.UpdateRewardFunctionCriticalPoint:
+          human_critic: true
+          use_env_name: true
+          n_queries: 50
+          initial_reward_estimation_epochs: 200
+          reward_training_epochs: 50
+          truth: 90
+          traj_length: 50
+          smallest_rew_threshold: -1.2
+          largest_rew_threshold: 1.0
+          n_initial_queries: 100
+          max_queries: 1000
+          every_n_timestep: 20000

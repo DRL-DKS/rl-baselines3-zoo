@@ -323,7 +323,7 @@ class HumanCritic:
     def train_dataset_with_critical_points(self, dataset, meta_data, epochs_override=-1):
         max_regularization_sum = 0
         reg_sum = 1
-        for i in range(5):
+        for i in range(10):
             max_regularization_sum += reg_sum
             reg_sum = reg_sum * 0.5
 
@@ -361,10 +361,11 @@ class HumanCritic:
                 preds_correct = torch.eq(torch.argmax(prefs, 1), torch.argmax(preds, 1)).type(torch.float32)
                 accuracy = torch.mean(preds_correct)
 
-                #loss_fn = nn.CrossEntropyLoss(reduction="sum")
-                loss_fn = nn.BCEWithLogitsLoss(reduction="sum")
-                approve_reward, punishment_reward, n_approve, n_punishment = self.get_critical_points_rewards(critical_points, prefs, r1_rolled,
-                                                                                     r2_rolled)
+                loss_fn = nn.CrossEntropyLoss(reduction="sum")
+                #loss_fn = nn.BCEWithLogitsLoss(reduction="sum")
+                approve_reward, punishment_reward, n_approve, n_punishment = self.get_critical_points_rewards(
+                    critical_points, prefs, r1_rolled,
+                    r2_rolled)
                 approve_reward = (approve_reward / n_approve)
                 punishment_reward = (punishment_reward / n_punishment)
                 episode_approve_reward += approve_reward
@@ -373,21 +374,16 @@ class HumanCritic:
                 episode_approvements += n_approve
 
                 # L1 regularization to create sparse representation
-
-                l1_lambda = 0.0001
+                l1_lambda = 0.000001
                 l1_norm = sum(abs(p).sum() for p in self.reward_model.parameters())
 
                 if self.regularize:
+                    regularization_approve = abs(max_regularization_sum - approve_reward)  # 2 = 1 + 0.5 + 0.5^2 + 0.5^3 geometric sum
+                    regularization_punishment = abs(max_regularization_sum + punishment_reward)
+                    running_regularization_loss_approve += regularization_approve
+                    running_regularization_loss_punishment += regularization_punishment
 
-                    #regularization_approve = abs(max_regularization_sum - approve_reward)  # 2 = 1 + 0.5 + 0.5^2 + 0.5^3 geometric sum
-                    #regularization_punishment = abs(max_regularization_sum + punishment_reward)
-                    running_regularization_loss_approve += approve_reward
-                    running_regularization_loss_punishment += punishment_reward
-
-                    #running_regularization_loss_punishment += punishment_reward
-                    #running_regularization_loss_approve += approve_reward
-                    #prefs = torch.max(prefs, 1)[1]  # TODO: Seems to be a problem with UnityEnv
-                    loss = loss_fn(rss, prefs) - approve_reward * 10 + punishment_reward * 0.5 #+ l1_lambda * l1_norm
+                    loss = loss_fn(rss, prefs) + regularization_approve * 5 + regularization_punishment * 5 #+ l1_lambda * l1_norm
                 else:
                     #prefs = torch.max(prefs, 1)[1]  # TODO: Seems to be a problem with UnityEnv
                     loss = loss_fn(rss, prefs) #+ l1_lambda * l1_norm
@@ -437,10 +433,10 @@ class HumanCritic:
         critical_points_discounted_reward_approve = torch.zeros_like(r1_rolled)
         for i in range(len(prefs)):
             if prefs[i][0] == 1:
-                critical_points_discounted_reward_punishment[i] = r2_rolled[i] * critical_points[i, :, 0]
+                critical_points_discounted_reward_punishment[i] = r1_rolled[i] * critical_points[i, :, 0]
                 critical_points_discounted_reward_approve[i] = r1_rolled[i] * critical_points[i, :, 1]
             if prefs[i][1] == 1:
-                critical_points_discounted_reward_punishment[i] = r1_rolled[i] * critical_points[i, :, 0]
+                critical_points_discounted_reward_punishment[i] = r2_rolled[i] * critical_points[i, :, 0]
                 critical_points_discounted_reward_approve[i] = r2_rolled[i] * critical_points[i, :, 1]
 
         punishments_in_batch = torch.sum(critical_points[:, :, 0] == 1).item()
@@ -487,13 +483,13 @@ class HumanCritic:
 
             if pos_index != -1:
                 current_pos_discount = self.pos_discount_start_multiplier
-                for j in reversed(range(max(0, pos_index - 5), pos_index + 1)):
+                for j in reversed(range(max(0, pos_index - 10), pos_index + 1)):
                     rolled_critical_points[i][j][1] = max(current_pos_discount, self.min_pos_discount)
                     current_pos_discount *= self.pos_discount
 
             if neg_index != -1:
                 current_neg_discount = self.neg_discount_start_multiplier
-                for j in reversed(range(max(0, neg_index - 5), neg_index + 1)):
+                for j in reversed(range(max(0, neg_index - 10), neg_index + 1)):
                     rolled_critical_points[i][j][0] = max(current_neg_discount, self.min_neg_discount)
                     current_neg_discount *= self.neg_discount
         critical_points = np.asarray(rolled_critical_points).astype('float32')
@@ -879,19 +875,11 @@ class HumanCritic:
             point = [-1, -1]
         elif total_reward_1 > total_reward_2 + epsilon:
             preference = [1, 0] if fakes_percentage < random.random() else [0, 1]
-            #point = critical_points[0] if preference[0] == 1 else critical_points[1]
-            if preference[0] == 1:
-                point = [critical_points[1][0], critical_points[0][1]]
-            else:
-                point = [critical_points[0][0], critical_points[1][1]]
+            point = critical_points[0] if preference[0] == 1 else critical_points[1]
 
         elif total_reward_1 + epsilon < total_reward_2:
             preference = [0, 1] if fakes_percentage < random.random() else [1, 0]
-            #point = critical_points[1] if preference[1] == 1 else critical_points[0]
-            if preference[1] == 1:
-                point = [critical_points[0][0], critical_points[1][1]]
-            else:
-                point = [critical_points[1][0], critical_points[0][1]]
+            point = critical_points[1] if preference[1] == 1 else critical_points[0]
         else:
             preference = [0.5, 0.5]
             point = [-1, -1]
