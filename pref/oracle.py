@@ -106,8 +106,8 @@ def mlp(sizes, activation, output_activation=nn.Identity):
     for j in range(len(sizes) - 1):
         act = activation if j < len(sizes) - 2 else output_activation
         layers += [nn.Linear(sizes[j], sizes[j + 1]), act()]
-        #if j < len(sizes) - 2:
-        #    layers += [nn.Dropout(0.5 if j > 0 else 0.2)]
+        if j < len(sizes) - 2:
+            layers += [nn.Dropout(0.5 if j > 0 else 0.2)]
     return nn.Sequential(*layers)
 
 
@@ -486,17 +486,6 @@ class HumanCritic:
                 r1_rolled = torch.reshape(r1_unrolled, o1.shape[0:2])
                 r2_rolled = torch.reshape(r2_unrolled, o2.shape[0:2])
 
-                rs1 = torch.sum(r1_rolled, dim=1)
-                rs2 = torch.sum(r2_rolled, dim=1)
-                rss = torch.stack([rs1, rs2])
-                rss = torch.t(rss)
-
-                preds = torch.softmax(rss, dim=0)
-                preds_correct = torch.eq(torch.argmax(prefs, 1), torch.argmax(preds, 1)).type(torch.float32)
-                accuracy = torch.mean(preds_correct)
-
-                #loss_fn = nn.CrossEntropyLoss(reduction="sum")
-                loss_fn = nn.BCEWithLogitsLoss(reduction="sum")
                 approve_reward, punishment_reward, n_approve, n_punishment = self.get_critical_points_rewards(
                     critical_points, prefs, r1_rolled,
                     r2_rolled)
@@ -510,6 +499,19 @@ class HumanCritic:
                 episode_approve_reward += approve_reward
                 episode_punishment_reward += punishment_reward
 
+                rs1 = torch.sum(r1_rolled, dim=1)
+                rs2 = torch.sum(r2_rolled, dim=1)
+                rss = torch.stack([rs1, rs2])
+                rss = torch.t(rss)
+
+                preds = torch.softmax(rss, dim=0)
+                preds_correct = torch.eq(torch.argmax(prefs, 1), torch.argmax(preds, 1)).type(torch.float32)
+                accuracy = torch.mean(preds_correct)
+
+                #loss_fn = nn.CrossEntropyLoss(reduction="sum")
+                loss_fn = nn.BCEWithLogitsLoss(reduction="sum")
+                #loss_fn = nn.BCELoss(reduction="sum")
+
                 # L1 regularization to create sparse representation
                 l1_lambda = 0.0001
                 l1_norm = sum(abs(p).sum() for p in self.reward_model.parameters())
@@ -520,10 +522,14 @@ class HumanCritic:
                     running_regularization_loss_approve += regularization_approve
                     running_regularization_loss_punishment += regularization_punishment
                     #prefs = torch.max(prefs, 1)[1]
-                    loss = loss_fn(rss, prefs) + regularization_approve * 2.0 + regularization_punishment * 0.5 #+ l1_lambda * l1_norm
+
+                    loss_pref = -torch.sum(torch.log(preds[prefs == 1]))
+                    loss = loss_pref - approve_reward * 2 + punishment_reward * 0.5#+ l1_lambda * l1_norm
                 else:
                     #prefs = torch.max(prefs, 1)[1]
-                    loss = loss_fn(rss, prefs) #+ l1_lambda * l1_norm
+                    loss_pref = -torch.sum(torch.log(preds[prefs == 1]))
+                    loss = loss_pref
+                    #loss = loss_fn(preds, prefs)
 
                 running_loss += loss.detach().numpy().item()
                 running_accuracy += accuracy
@@ -997,8 +1003,8 @@ class HumanCritic:
         epsilon = 1
         if total_reward_1 > total_reward_2 + epsilon:
             preference = [1, 0] if fakes_percentage < random.random() else [0, 1]
-            #point = critical_points[0] if preference[0] == 1 else critical_points[1]
-            point = critical_points[0] if preference[0] == 1 else [-1, -1]
+            point = critical_points[0] if preference[0] == 1 else critical_points[1]
+            #point = critical_points[0] if preference[0] == 1 else [-1, -1]
             """
             if preference[0] == 1:
                 point = [critical_points[1][0], critical_points[0][1]]
@@ -1007,8 +1013,8 @@ class HumanCritic:
             """
         elif total_reward_1 + epsilon < total_reward_2:
             preference = [0, 1] if fakes_percentage < random.random() else [1, 0]
-            point = critical_points[1] if preference[1] == 1 else [-1, -1]
-            #point = critical_points[1] if preference[1] == 1 else critical_points[0]
+            #point = critical_points[1] if preference[1] == 1 else [-1, -1]
+            point = critical_points[1] if preference[1] == 1 else critical_points[0]
             """
             if preference[1] == 1:
                 point = [critical_points[0][0], critical_points[1][1]]

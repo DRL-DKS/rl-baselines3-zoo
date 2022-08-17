@@ -318,7 +318,7 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
         critical_points = self.hc.critical_points[:self.hc.critical_points_size]
 
         self.hc.generate_preference_pairs_with_critical_points(trajectories, critical_points, truth=self.truth, number_of_queries=self.n_initial_queries)
-        #self.hc.generate_preference_pairs_information_based(trajectories, critical_points, truth=self.truth, number_of_queries=self.n_initial_queries, uncertain_ratio=0.5)
+        #self.hc.generate_preference_pairs_information_based(trajectories, critical_points, truth=self.truth, number_of_queries=self.n_initial_queries, uncertain_ratio=0.5, type="minmax")
 
         self.train_reward_model(self.initial_reward_estimation_epochs)
 
@@ -335,12 +335,12 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
             traj_to_collect = self.n_queries * 5
             trajectories, critical_points = self.collect_segments_with_critical_points(self.model, 100000, traj_to_collect)
             #trajectories = self.hc.segments[:self.hc.segments_size]
-            trajectories = self.hc.segments[max(0, (self.hc.segments_size - (traj_to_collect * 2))):self.hc.segments_size]
-            critical_points = self.hc.critical_points[max(0, (self.hc.segments_size - (traj_to_collect * 2))):self.hc.segments_size]
+            trajectories = self.hc.segments[max(0, (self.hc.segments_size - (traj_to_collect * 5))):self.hc.segments_size]
+            critical_points = self.hc.critical_points[max(0, (self.hc.segments_size - (traj_to_collect * 5))):self.hc.segments_size]
             #critical_points = self.hc.critical_points[:self.hc.critical_points_size]
 
             self.hc.generate_preference_pairs_with_critical_points(trajectories, critical_points, truth=self.truth, number_of_queries=self.n_queries)
-            #self.hc.generate_preference_pairs_information_based(trajectories, critical_points, truth=self.truth, number_of_queries=self.n_queries, uncertain_ratio=0.1, type="max")
+            #self.hc.generate_preference_pairs_information_based(trajectories, critical_points, truth=self.truth, number_of_queries=self.n_queries, uncertain_ratio=0.25, type="minmax")
 
             self.train_reward_model(self.reward_training_epochs)
             self.hc.save_reward_model(self.env_name + "-loop2")
