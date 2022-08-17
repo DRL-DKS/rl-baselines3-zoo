@@ -302,6 +302,8 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
         self.n_initial_queries = n_initial_queries
         self.seed = seed
         self.max_queries = max_queries
+        self.no_improvements_count = 0
+        self.collect_queries = True
         self.workerid = workerid
         print("truth:")
         print(self.truth)
@@ -316,6 +318,7 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
         critical_points = self.hc.critical_points[:self.hc.critical_points_size]
 
         self.hc.generate_preference_pairs_with_critical_points(trajectories, critical_points, truth=self.truth, number_of_queries=self.n_initial_queries)
+        #self.hc.generate_preference_pairs_information_based(trajectories, critical_points, truth=self.truth, number_of_queries=self.n_initial_queries, uncertain_ratio=0.5)
 
         self.train_reward_model(self.initial_reward_estimation_epochs)
 
@@ -327,16 +330,17 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
     def _on_step(self) -> bool:
 
         self.model.save(self.env_name + "-loop2")
-        if self.hc.pairs_size < self.max_queries:  # TODO: remove plz or make into argument
+        if self.hc.pairs_size < self.max_queries and (self.collect_queries or True):  # TODO: remove plz or make into argument
 
             traj_to_collect = self.n_queries * 5
             trajectories, critical_points = self.collect_segments_with_critical_points(self.model, 100000, traj_to_collect)
             #trajectories = self.hc.segments[:self.hc.segments_size]
-            trajectories = self.hc.segments[max(0, (self.hc.segments_size - (traj_to_collect * 5))):self.hc.segments_size]
-            critical_points = self.hc.critical_points[max(0, (self.hc.segments_size - (traj_to_collect * 5))):self.hc.segments_size]
+            trajectories = self.hc.segments[max(0, (self.hc.segments_size - (traj_to_collect * 2))):self.hc.segments_size]
+            critical_points = self.hc.critical_points[max(0, (self.hc.segments_size - (traj_to_collect * 2))):self.hc.segments_size]
             #critical_points = self.hc.critical_points[:self.hc.critical_points_size]
 
             self.hc.generate_preference_pairs_with_critical_points(trajectories, critical_points, truth=self.truth, number_of_queries=self.n_queries)
+            #self.hc.generate_preference_pairs_information_based(trajectories, critical_points, truth=self.truth, number_of_queries=self.n_queries, uncertain_ratio=0.1, type="max")
 
             self.train_reward_model(self.reward_training_epochs)
             self.hc.save_reward_model(self.env_name + "-loop2")
@@ -358,7 +362,15 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
         tensor_critical_points = torch.Tensor(critical_points)
         my_dataset = TensorDataset(tensor_o1, tensor_o2, tensor_prefs, tensor_critical_points)
         my_dataloader = DataLoader(my_dataset, batch_size=self.hc.batch_size, shuffle=True)
-        self.hc.train_dataset_with_critical_points(my_dataloader, None, training_epochs)
+        meta_data = self.hc.train_dataset_with_critical_points(my_dataloader, None, training_epochs)
+
+        if meta_data["improved"]:
+            self.no_improvements_count = max(0, self.no_improvements_count - 1)
+        else:
+            self.no_improvements_count += 1
+        if self.no_improvements_count >= 3:
+            self.collect_queries = False
+
 
     def process_traj_segment(self, traj_segment, segment_reward, done, traj_k_lenght=25):
         if len(traj_segment) < traj_k_lenght and done:
@@ -399,6 +411,9 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
             env = gym.make(self.env_name)
         env.seed(self.seed)
 
+        score = 0
+        traj_segment = []
+        segment_reward = 0
         for e in range(test_episodes):
             largest_rew = self.largest_rew_threshold
             largest_rew_index = -1
@@ -410,9 +425,7 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
 
             obs = env.reset()
             done = False
-            score = 0
-            traj_segment = []
-            segment_reward = 0
+
 
             while not done:
                 action, _states = model.predict(obs, deterministic=False)
@@ -437,7 +450,7 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
 
                 traj_segment.append(np.concatenate((obs.squeeze(), action)))
 
-                if len(traj_segment) == self.traj_length:
+                if len(traj_segment) == self.traj_length or done:
                     self.process_traj_segment(traj_segment, segment_reward, done, self.traj_length)
                     total_segments.append([traj_segment, segment_reward])
                     traj_segment, segment_reward = [], 0

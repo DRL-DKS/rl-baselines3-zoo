@@ -396,7 +396,7 @@ class ExperimentManager:
                 if self.args.n_queries != -1:
                     callback_name = list(hyperparams["pref_learning"]["callback"][0].keys())[0]
                     n_init_queries = hyperparams["pref_learning"]["callback"][0][callback_name]["n_initial_queries"]
-                    total_queries = n_init_queries + self.args.n_queries * 5 * 5 - self.args.n_queries
+                    total_queries = n_init_queries + self.args.n_queries * 5 * 3 - self.args.n_queries
                     hyperparams["pref_learning"]["callback"][0][callback_name]["n_queries"] = self.args.n_queries
                     hyperparams["pref_learning"]["callback"][0][callback_name]["max_queries"] = total_queries
 

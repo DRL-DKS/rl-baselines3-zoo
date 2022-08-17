@@ -188,6 +188,7 @@ if __name__ == "__main__":  # noqa: C901
         currTime = datetime.now()
         date_time = currTime.strftime("%H:%M:%S-%d/%m/%Y")
 
+        wandb.login(key="bc48b46ad36770df58a83389e5609a4aab876af6")
         run_name = f"{args.env}__{date_time}__{args.seed}"
         run = wandb.init(
             name=run_name,

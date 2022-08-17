@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # This script is the entrypoint for the Docker image.
 # Taken from https://github.com/openai/gym/
 

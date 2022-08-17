@@ -474,7 +474,8 @@ class LunarLanderAvoidTop(gym.Wrapper):
     def step(self, action):
         next_state, reward, done, info = self.env.step(action)
         if next_state[1] >= 1.5:
-            reward = -25
+            reward = -100
+            done = True
         return next_state, reward, done, info
 
     def reset(self):
