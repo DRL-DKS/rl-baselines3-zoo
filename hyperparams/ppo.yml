@@ -246,11 +246,11 @@ LunarLanderContinuous-v2:
       maximum_segment_buffer: 1000000
       maximum_preference_buffer: 3500
       training_epochs: 10
-      batch_size: 64
-      hidden_sizes: [256, 256, 256]
+      batch_size: 128
+      hidden_sizes: [64, 64]
       traj_k_lenght: 50
       weight_decay: 0.0
-      regularize: true
+      regularize: false
       custom_oracle: false
     wrapper:
       - utils.wrappers.HumanReward:
@@ -260,15 +260,15 @@ LunarLanderContinuous-v2:
           human_critic: true
           use_env_name: true
           n_queries: 40
-          initial_reward_estimation_epochs: 500
-          reward_training_epochs: 500
+          initial_reward_estimation_epochs: 200
+          reward_training_epochs: 50
           truth: 90
           traj_length: 50
           smallest_rew_threshold: -20
-          largest_rew_threshold: 10
-          n_initial_queries: 80
-          max_queries: 240
-          every_n_timestep: 50000
+          largest_rew_threshold: 20
+          n_initial_queries: 200
+          max_queries: 900
+          every_n_timestep: 20000
 
 
 
@@ -660,7 +660,7 @@ HalfCheetah-v3:
           traj_length: 50
           smallest_rew_threshold: -0.5
           largest_rew_threshold: 0.5
-          n_initial_queries: 100
+          n_initial_queries: 200
           max_queries: 1000
           every_n_timestep: 20000
 
@@ -914,7 +914,7 @@ Walker2d-v3:
       traj_k_lenght: 50
       weight_decay: 0.0
       learning_rate: 0.0003
-      regularize: true
+      regularize: false
       custom_oracle: false
     wrapper:
       - utils.wrappers.HumanReward:
@@ -923,14 +923,14 @@ Walker2d-v3:
       - pref.callbacks.UpdateRewardFunctionCriticalPoint:
           human_critic: true
           use_env_name: true
-          n_queries: 10
+          n_queries: 50
           initial_reward_estimation_epochs: 200
           reward_training_epochs: 50
           truth: 90
           traj_length: 50
           smallest_rew_threshold: -1.2
           largest_rew_threshold: 1.3
-          n_initial_queries: 20
+          n_initial_queries: 200
           max_queries: 1000
           every_n_timestep: 20000
 
