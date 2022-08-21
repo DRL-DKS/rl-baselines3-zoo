@@ -106,8 +106,8 @@ def mlp(sizes, activation, output_activation=nn.Identity):
     for j in range(len(sizes) - 1):
         act = activation if j < len(sizes) - 2 else output_activation
         layers += [nn.Linear(sizes[j], sizes[j + 1]), act()]
-        if j < len(sizes) - 2:
-            layers += [nn.Dropout(0.5 if j > 0 else 0.2)]
+        #if j < len(sizes) - 2:
+        #    layers += [nn.Dropout(0.5 if j > 0 else 0.2)]
     return nn.Sequential(*layers)
 
 
@@ -186,6 +186,7 @@ class HumanCritic:
 
         self.regularize = regularize
         self.custom_oracle = custom_oracle
+        self.env_name = env_name
         self.oracle_reward_function = self.get_oracle_reward_function(env_name)
 
         if wandb.run is not None:
@@ -509,7 +510,7 @@ class HumanCritic:
                 accuracy = torch.mean(preds_correct)
 
                 #loss_fn = nn.CrossEntropyLoss(reduction="sum")
-                loss_fn = nn.BCEWithLogitsLoss(reduction="sum")
+                #loss_fn = nn.BCEWithLogitsLoss(reduction="sum")
                 #loss_fn = nn.BCELoss(reduction="sum")
 
                 # L1 regularization to create sparse representation
@@ -524,7 +525,12 @@ class HumanCritic:
                     #prefs = torch.max(prefs, 1)[1]
 
                     loss_pref = -torch.sum(torch.log(preds[prefs == 1]))
-                    loss = loss_pref - approve_reward * 2 + punishment_reward * 0.5#+ l1_lambda * l1_norm
+                    if self.env_name == "Social-Nav-v1":
+                        loss = loss_pref - approve_reward * 10 + punishment_reward * 10  #+ l1_lambda * l1_norm
+                    elif self.env_name == "Walker2d-v3":
+                        loss = loss_pref - approve_reward * 10 + punishment_reward * 5  # + l1_lambda * l1_norm
+                    else:
+                        loss = loss_pref - approve_reward * 10 + punishment_reward * 10  # + l1_lambda * l1_norm
                 else:
                     #prefs = torch.max(prefs, 1)[1]
                     loss_pref = -torch.sum(torch.log(preds[prefs == 1]))
@@ -845,6 +851,28 @@ class HumanCritic:
         return [segment1, segment2, preference]
 
     def get_query_results_reward_hopper(self, segment1, segment2, truth, critical_points):
+        reward_jump1 = sum([transition[0]**2 if transition[0] > 1.25 else 0 for transition in segment1[0]]) * 5
+        reward_jump2 = sum([transition[0]**2 if transition[0] > 1.25 else 0 for transition in segment2[0]]) * 5
+
+        total_reward_1 = segment1[-1] + reward_jump1
+        total_reward_2 = segment2[-1] + reward_jump2
+
+        truth_percentage = truth / 100.0
+        fakes_percentage = 1 - truth_percentage
+        if total_reward_1 > total_reward_2:
+            preference = [1, 0] if fakes_percentage < random.random() else [0, 1]
+            point = critical_points[0] if preference[0] == 1 else critical_points[1]
+        elif total_reward_1 < total_reward_2:
+            preference = [0, 1] if fakes_percentage < random.random() else [1, 0]
+            point = critical_points[1] if preference[1] == 1 else critical_points[0]
+        elif abs(total_reward_1 - total_reward_2) < 1:
+            preference = [0.5, 0.5]
+            point = [-1, -1]
+        else:
+            raise "Error computing preferences"
+        return [segment1, segment2, preference, point]
+
+    def get_query_results_reward_hopper_v2(self, segment1, segment2, truth, critical_points):
         move_reward_1 = sum([transition[5]for transition in segment1[0]]) / 10
         move_reward_2 = sum([transition[5]for transition in segment2[0]]) / 10
 
@@ -913,71 +941,43 @@ class HumanCritic:
             raise "Error computing preferences"
         return [segment1, segment2, preference]
 
-    def get_query_results_reward_socialnav_v2(self, segment1, segment2, truth, critical_points):
-        closeness_reward1 = 0
-        closeness_reward2 = 0
+    def get_query_results_reward_socialnav_v22(self, segment1, segment2, truth, critical_points):
         transitions1 = segment1[0]
         transitions2 = segment2[0]
 
-        obs_len = len(transitions1[0])
-        ray_size = 5
+        #closeness_rew1 = (sum([max(0, 1 - transition[4]) ** 2 for transition in transitions1]) / 10) * 0.1
+        #closeness_rew2 = (sum([max(0, 1 - transition[4]) ** 2 for transition in transitions2]) / 10) * 0.1
 
+        closeness_rew1 = max(0, (1 - transitions1[-1][4])) ** 2 * 0.02
+        closeness_rew2 = max(0, (1 - transitions2[-1][4])) ** 2 * 0.02
 
-        def vector_of_segment(start, end):
-            a, b = start
-            c, d = end
-            return (c - a, d - b)
+        moving_towards_goal_rew1 = (transitions1[0][4] - transitions1[-1][4]) * 2
+        moving_towards_goal_rew2 = (transitions2[0][4] - transitions2[-1][4]) * 2
 
-        def scalar_product(u, v):
-            a, b = u
-            c, d = v
-            return a * c + b * d
+        wall_closeness_rew1 = -(sum([max(0, abs(transition[1]) - 0.75) for transition in transitions1]) / 10) * 1.5
+        wall_closeness_rew1 += -(sum([max(0, abs(transition[0]) - 0.75) for transition in transitions1]) / 10) * 1.5
+        wall_closeness_rew2 = -(sum([max(0, abs(transition[1]) - 0.75) for transition in transitions2]) / 10) * 1.5
+        wall_closeness_rew2 += -(sum([max(0, abs(transition[0]) - 0.75) for transition in transitions2]) / 10) * 1.5
 
-        def norm(u):
-            return math.sqrt(scalar_product(u, u))
-
-        def cosine_similarity(u, v):
-            return scalar_product(u, v) / (norm(u) * norm(v))
-
-        def cosine_similarity_of_roads(line1, line2):
-            u = vector_of_segment(*line1)
-            v = vector_of_segment(*line2)
-            return cosine_similarity(u, v)
-
-
-        #closeness_reward1 = sum([math.sqrt((transition[4] - transition[0]) ** 2 + (transition[5] - transition[1]) ** 2) for transition in transitions1]) / 1000
-        #closeness_reward2 = sum([math.sqrt((transition[4] - transition[0]) ** 2 + (transition[5] - transition[1]) ** 2) for transition in transitions2]) / 1000
-        closeness_rew1 = (sum([max(0, 1 - transition[4]) ** 2 for transition in transitions1]) / 10) * 0.1
-        closeness_rew2 = (sum([max(0, 1 - transition[4]) ** 2 for transition in transitions2]) / 10) * 0.1
-
-        moving_towards_goal_rew1 = (transitions1[0][4] - transitions1[-1][4]) * 0.7
-        moving_towards_goal_rew2 = (transitions2[0][4] - transitions2[-1][4]) * 0.7
-
-        wall_closeness_rew1 = -(sum([max(0, transition[1] - 0.8) for transition in transitions1]) / 10) * 0.1
-        wall_closeness_rew1 += -(sum([max(0, abs(transition[0]) - 0.9) for transition in transitions1]) / 10) * 0.1
-        wall_closeness_rew2 = -(sum([max(0, transition[1] - 0.8) for transition in transitions2]) / 10) * 0.1
-        wall_closeness_rew2 += -(sum([max(0, abs(transition[0]) - 0.9) for transition in transitions2]) / 10) * 0.1
-
-        char_closeness_rew1 = -min(0.8, sum([max(0, (1 - transition[11] - 0.8) * 5, (1 - transition[14] - 0.8) * 5) for transition in transitions1]) / 10 * 4)
-        char_closeness_rew2 = -min(0.8, sum([max(0, (1 - transition[11] - 0.8) * 5, (1 - transition[14] - 0.8) * 5) for transition in transitions2]) / 10 * 4)
-
-        #closeness_reward1 -= (sum([max(0, 1 - (transition[11] - 0.75)**2, 1 - (transition[16] - 0.75)**2) for transition in transitions1]) / 50) * 0.1
-        #closeness_reward2 -= (sum([max(0, 1 - (transition[11] - 0.75)**2, 1 - (transition[16] - 0.75)**2) for transition in transitions2]) / 50) * 0.1
+        char_closeness_rew1 = -min(0.8, (sum([max(0, (0.2 - transition[9])) ** 2 for
+                                             transition in transitions1]) / 10) * 0.05)
+        char_closeness_rew2 = -min(0.8, (sum([max(0, (0.2 - transition[12])) ** 2 for
+                                             transition in transitions2]) / 10) * 0.05)
 
         total_reward_1 = segment1[-1] + closeness_rew1 + moving_towards_goal_rew1 + wall_closeness_rew1 + char_closeness_rew1
-        total_reward_2 = segment2[-1] + closeness_rew2 + moving_towards_goal_rew2 + wall_closeness_rew2 + char_closeness_rew2
+        total_reward_2 = segment2[-1] + closeness_rew2 + moving_towards_goal_rew1 + wall_closeness_rew2 + char_closeness_rew2
         truth_percentage = truth / 100.0
         fakes_percentage = 1 - truth_percentage
-        epsilon = 0.05
-        if segment1[-1] < -0.3 and segment2[-1] < -0.3:
+        epsilon = 0.2
+        if segment1[-1] < -0.9 and segment2[-1] < -0.9:
             preference = [0, 0]
             point = [-1, -1]
         elif total_reward_1 > total_reward_2 + epsilon:
-            preference = [1, 0] if fakes_percentage < random.random() else [0, 1]
+            preference = [1, 0] if fakes_percentage < random.random() or segment1[-1] > 0.7 else [0, 1]
             point = critical_points[0] if preference[0] == 1 else critical_points[1]
 
         elif total_reward_1 + epsilon < total_reward_2:
-            preference = [0, 1] if fakes_percentage < random.random() else [1, 0]
+            preference = [0, 1] if fakes_percentage < random.random() or segment2[-1] > 0.7 else [1, 0]
             point = critical_points[1] if preference[1] == 1 else critical_points[0]
         else:
             preference = [0.5, 0.5]
@@ -995,12 +995,69 @@ class HumanCritic:
 
         return [segment1, segment2, preference, point]
 
+    def get_query_results_reward_socialnav_v2(self, segment1, segment2, truth, critical_points):
+        transitions1 = segment1[0]
+        transitions2 = segment2[0]
+
+        closeness_rew1 = max(-0.25, min(0.25, transitions1[-1][-3] / 2 ))
+        closeness_rew2 = max(-0.25, min(0.25, transitions2[-1][-3] / 2 ))
+
+        enemy_closeness1 = 0
+        enemy_closeness2 = 0
+        closeness_rew_ray1 = 0
+        closeness_rew_ray2 = 0
+        for i in range(9):
+            ray_index = i * 5
+            closeness_rew_ray1 += sum([transition[ray_index + 2] * max(0, 0.5 - transition[ray_index + 4]) for transition in transitions1]) / 10
+            closeness_rew_ray2 += sum([transition[ray_index + 2] * max(0, 0.5 - transition[ray_index + 4]) for transition in transitions2]) / 10
+
+            enemy_closeness1 = min(enemy_closeness1, -sum([(transition[ray_index] + transition[ray_index + 1]) * max(0, 0.15 - transition[ray_index + 4]) for transition in transitions1]) / 6)
+            enemy_closeness2 = min(enemy_closeness2, -sum([(transition[ray_index] + transition[ray_index + 1]) * max(0, 0.15 - transition[ray_index + 4]) for transition in transitions2]) / 6)
+
+        closeness_rew_ray1 = min(closeness_rew_ray1, 0.5)
+        closeness_rew_ray2 = min(closeness_rew_ray2, 0.5)
+        enemy_closeness1 = max(enemy_closeness1, -0.25)
+        enemy_closeness2 = max(enemy_closeness2, -0.25)
+        velocity_rew1 = min(0.15, sum(transition[-1] for transition in transitions1) / (10))
+        velocity_rew2 = min(0.15, sum(transition[-1] for transition in transitions2) / (10))
+
+        total_reward_1 = segment1[-1] * 2 + (closeness_rew1 + velocity_rew1 + closeness_rew_ray1 + enemy_closeness1) * 0.5
+        total_reward_2 = segment2[-1] * 2 + (closeness_rew2 + velocity_rew2 + closeness_rew_ray2 + enemy_closeness2) * 0.5
+        truth_percentage = truth / 100.0
+        fakes_percentage = 1 - truth_percentage
+        epsilon = 0.05
+        if segment1[-1] < -0.9 and segment2[-1] < -0.9:
+            preference = [0, 0]
+            point = [-1, -1]
+        elif total_reward_1 > total_reward_2 + epsilon:
+            preference = [1, 0] if fakes_percentage < random.random() else [0, 1]
+            point = critical_points[0] if preference[0] == 1 else critical_points[1]
+
+        elif total_reward_1 + epsilon < total_reward_2:
+            preference = [0, 1] if fakes_percentage < random.random() else [1, 0]
+            point = critical_points[1] if preference[1] == 1 else critical_points[0]
+        else:
+            preference = [0.5, 0.5]
+            point = [-1, -1]
+
+        if wandb.run is not None:
+            wandb.log({"oracle/total": (total_reward_1 + total_reward_2) / 2,
+                       "oracle/end_wall_closeness": (closeness_rew1 + closeness_rew2) / 2,  # actually closeness to wall in pos way
+                       "oracle/char_closeness": (enemy_closeness1 + enemy_closeness2) / 2,
+                       "oracle/towards_goal": (velocity_rew1 + velocity_rew2) / 2,  # actually velocity
+                       "oracle/closeness": (closeness_rew_ray1 + closeness_rew_ray2) / 2,  # actually closeness to goal dep on ray
+                       "oracle/true_rew": (segment1[-1] + segment2[-1]) / 2,
+                       "oracle/pairs": self.pairs_size
+                       })
+
+        return [segment1, segment2, preference, point]
+
     def get_query_results_reward(self, segment1, segment2, truth, critical_points):
         total_reward_1 = segment1[-1]
         total_reward_2 = segment2[-1]
         truth_percentage = truth / 100.0
         fakes_percentage = 1 - truth_percentage
-        epsilon = 1
+        epsilon = 0.1
         if total_reward_1 > total_reward_2 + epsilon:
             preference = [1, 0] if fakes_percentage < random.random() else [0, 1]
             point = critical_points[0] if preference[0] == 1 else critical_points[1]

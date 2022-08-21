@@ -598,7 +598,8 @@ class ExperimentManager:
             worker_id = random.randint(0, 20000) if eval_env else random.randint(30000, 60000)
             if self.args.workerid != -1:
                 worker_id += self.args.workerid
-            unity_env = UnityEnvironment('envs/socialnav_supersimple6/socialnav1', side_channels=[channel, recording_channel], worker_id=worker_id, no_graphics=False)
+            #unity_env = UnityEnvironment('envs/socialnav_supersimple6/socialnav1', side_channels=[channel, recording_channel], worker_id=worker_id, no_graphics=False)
+            unity_env = UnityEnvironment('envs/snappy_rays/socialnav1', side_channels=[channel, recording_channel], worker_id=worker_id, no_graphics=False)
             channel.set_configuration_parameters(time_scale=30.0)
             env_id = UnityToGymWrapper
             env_kwargs = {"unity_env": unity_env, "uint8_visual": False, "allow_multiple_obs": False}

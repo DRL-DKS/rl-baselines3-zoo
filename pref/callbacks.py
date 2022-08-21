@@ -403,10 +403,12 @@ class UpdateRewardFunctionCriticalPoint(BaseCallback):
             workerid = 42
             if self.workerid != -1:
                 workerid = 43
-            unity_env = UnityEnvironment('./envs/socialnav_supersimple6/socialnav1', side_channels=[channel], worker_id=workerid, no_graphics=True)
+            #unity_env = UnityEnvironment('./envs/socialnav_supersimple6/socialnav1', side_channels=[channel], worker_id=workerid, no_graphics=True)
+            unity_env = UnityEnvironment('./envs/snappy_rays/socialnav1', side_channels=[channel], worker_id=workerid, no_graphics=True)
             channel.set_configuration_parameters(time_scale=30.0)
             env = UnityToGymWrapper(unity_env, uint8_visual=False, allow_multiple_obs=False)
-            env.reset()
+            state = env.reset()
+            print(state)
         else:
             env = gym.make(self.env_name)
         env.seed(self.seed)
@@ -605,8 +607,8 @@ class UpdateRewardFunctionRealHuman(BaseCallback):
             workerid = 42
             if self.workerid != -1:
                 workerid = 43
-            unity_env = UnityEnvironment('./envs/socialnav_supersimple6/socialnav1', side_channels=[channel],
-                                         worker_id=workerid, no_graphics=True)
+            #unity_env = UnityEnvironment('./envs/socialnav_supersimple6/socialnav1', side_channels=[channel], worker_id=workerid, no_graphics=True)
+            unity_env = UnityEnvironment('./envs/snappy_rays/socialnav1', side_channels=[channel], worker_id=workerid, no_graphics=True)
             channel.set_configuration_parameters(time_scale=30.0)
             collecting_env = UnityToGymWrapper(unity_env, uint8_visual=False, allow_multiple_obs=False)
             collecting_env.reset()

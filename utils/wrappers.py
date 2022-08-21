@@ -486,3 +486,52 @@ class LunarLanderAvoidTop(gym.Wrapper):
     def observation(self, obs):
         self.current_state = obs
         return obs
+
+
+class HopperMetric(gym.Wrapper):
+    """
+    Environment wrapper to replace the env reward function with a human based reward function.
+    In addition, it logs both the env and human reward per episode.
+    """
+
+    def __init__(self, env):
+        super().__init__(env)
+        self.z_coordinates = collections.deque(maxlen=10)
+        self.correct_count = 0
+        self.wrong_count = 0
+        if wandb.run is not None:
+            wandb.define_metric("hopper/ep_correct_ratio", summary="mean")
+            wandb.define_metric("hopper/ep_avg_z", summary="mean")
+
+    def step(self, action):
+        next_state, reward, done, info = self.env.step(action)
+
+        if next_state[0] < 1.3:
+            self.wrong_count += 1
+        else:
+            self.correct_count += 1
+
+        self.z_coordinates.append(next_state[0])
+        if done:
+
+            correct_ratio = self.correct_count / (self.correct_count + self.wrong_count)
+
+            z_coord_average = sum(self.z_coordinates) / len(self.z_coordinates)
+
+            self.correct_count = 0
+            self.wrong_count = 0
+
+            if wandb.run is not None:
+                wandb.log({"hopper/ep_correct_ratio": correct_ratio,
+                           "hopper/ep_avg_z": z_coord_average})
+
+        return next_state, reward, done, info
+
+    def reset(self):
+        state = self.env.reset()
+        self.current_state = state
+        return state
+
+    def observation(self, obs):
+        self.current_state = obs
+        return obs

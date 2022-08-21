@@ -136,13 +136,15 @@ def get_hyperparameters(env_name):
 def get_env_dimensions(env_id):
     if env_id == "Social-Nav-v1":
         channel = EngineConfigurationChannel()
-        unity_env = UnityEnvironment('./envs/socialnav_supersimple6/socialnav1', side_channels=[channel], no_graphics=True)
+        #unity_env = UnityEnvironment('./envs/socialnav_supersimple6/socialnav1', side_channels=[channel], no_graphics=True)
+        unity_env = UnityEnvironment('./envs/snappy_rays/socialnav1', side_channels=[channel], no_graphics=True)
         channel.set_configuration_parameters(time_scale=30.0)
         tmp_env = UnityToGymWrapper(unity_env, uint8_visual=False, allow_multiple_obs=False)
     else:
         tmp_env = gym.make(env_id)
     action_size = tmp_env.action_space.shape[0] if len(tmp_env.action_space.shape) > 0 else 1
     state_size = tmp_env.observation_space.shape
+    print(state_size)
     tmp_env.close()
     return action_size, state_size
 
