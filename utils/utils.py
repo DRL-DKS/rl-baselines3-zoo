@@ -20,7 +20,6 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv,
 # For custom activation fn
 from torch import nn as nn  # noqa: F401 pylint: disable=unused-import
 
-from pref.callbacks import UpdateRewardFunction
 from pref.oracle import HumanCritic
 from pref.utils import get_env_dimensions
 from pref.wrappers import get_metric

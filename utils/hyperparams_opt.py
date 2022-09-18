@@ -15,7 +15,7 @@ def sample_ppo_params(trial: optuna.Trial) -> Dict[str, Any]:
     :param trial:
     :return:
     """
-    """
+
     batch_size = trial.suggest_categorical("batch_size", [64, 128, 256, 512])
     n_steps = trial.suggest_categorical("n_steps", [128, 256, 512, 1024, 2048])
     gamma = trial.suggest_categorical("gamma", [0.95, 0.98, 0.99, 0.995])
@@ -55,26 +55,25 @@ def sample_ppo_params(trial: optuna.Trial) -> Dict[str, Any]:
     }[net_arch]
 
     activation_fn = {"tanh": nn.Tanh, "relu": nn.ReLU, "elu": nn.ELU, "leaky_relu": nn.LeakyReLU}[activation_fn]
-    """
+
     # Preference part
     # Human Critic
-    maximum_segment_buffer = trial.suggest_categorical("hc_maximum_segment_buffer", [5000, 1000000])
-    maximum_preference_buffer = trial.suggest_categorical("hc_maximum_preference_buffer", [1000, 1000000])
+    #maximum_segment_buffer = trial.suggest_categorical("hc_maximum_segment_buffer", [5000, 1000000])
+    #maximum_preference_buffer = trial.suggest_categorical("hc_maximum_preference_buffer", [1000, 1000000])
     hc_batch_size = trial.suggest_categorical("hc_batch_size", [64, 128, 256])
-    traj_k_lenght = trial.suggest_categorical("hc_btraj_k_lenght", [10, 20])
-    weight_decay = trial.suggest_loguniform("hc_weight_decay", 0.00001, 0.001)
+    traj_k_lenght = trial.suggest_categorical("hc_btraj_k_lenght", [10, 25, 50])
+    weight_decay = trial.suggest_loguniform("hc_weight_decay", 0.00000001, 0.001)
     learning_rate = trial.suggest_loguniform("hc_learning_rate", 0.00001, 0.01)
 
-    hc_net_arch = trial.suggest_categorical("hc_net_arch", ["small", "medium", "large"])
+    hc_net_arch = trial.suggest_categorical("hc_net_arch", ["small", "medium"])
     hc_net_arch = {
         "small": [64, 64],
-        "medium": [256, 256, 256],
-        "large": [512, 512, 512]
+        "medium": [256, 256, 256]
     }[hc_net_arch]
 
     hc = {
-        "maximum_segment_buffer": maximum_segment_buffer,
-        "maximum_preference_buffer": maximum_preference_buffer,
+        #"maximum_segment_buffer": maximum_segment_buffer,
+        #"maximum_preference_buffer": maximum_preference_buffer,
         "batch_size": hc_batch_size,
         "traj_k_lenght": traj_k_lenght,
         "hidden_sizes": hc_net_arch,
@@ -83,11 +82,11 @@ def sample_ppo_params(trial: optuna.Trial) -> Dict[str, Any]:
     }
 
     # Loop specific
-    n_queries = trial.suggest_categorical("pref_n_queries", [64, 128, 256])
-    n_initial_queries = trial.suggest_categorical("pref_n_initial_queries", [128, 256])
+    n_queries = trial.suggest_categorical("pref_n_queries", [20, 50, 100])
+    n_initial_queries = trial.suggest_categorical("pref_n_initial_queries", [100, 200, 400])
     initial_reward_estimation_epochs = trial.suggest_categorical("pref_initial_reward_estimation_epochs", [200, 400])
     reward_training_epochs = trial.suggest_categorical("pref_reward_training_epochs", [20, 50, 100])
-    max_queries = trial.suggest_categorical("pref_max_queries", [1024, 2048])
+    max_queries = trial.suggest_categorical("pref_max_queries", [400, 1400])
     traj_length = traj_k_lenght
 
     pref = {
@@ -100,28 +99,25 @@ def sample_ppo_params(trial: optuna.Trial) -> Dict[str, Any]:
     }
 
     return {
+        "n_steps": n_steps,
+        "batch_size": batch_size,
+        "gamma": gamma,
+        "learning_rate": learning_rate,
+        "ent_coef": ent_coef,
+        "clip_range": clip_range,
+        "n_epochs": n_epochs,
+        "gae_lambda": gae_lambda,
+        "max_grad_norm": max_grad_norm,
+        "vf_coef": vf_coef,
+        # "sde_sample_freq": sde_sample_freq,
+        "policy_kwargs": dict(
+            # log_std_init=log_std_init,
+            net_arch=net_arch,
+            activation_fn=activation_fn
+        ),
         "hc": hc,
         "pref": pref
     }
-
-    # return {
-    #     "n_steps": n_steps,
-    #     "batch_size": batch_size,
-    #     "gamma": gamma,
-    #     "learning_rate": learning_rate,
-    #     "ent_coef": ent_coef,
-    #     "clip_range": clip_range,
-    #     "n_epochs": n_epochs,
-    #     "gae_lambda": gae_lambda,
-    #     "max_grad_norm": max_grad_norm,
-    #     "vf_coef": vf_coef,
-    #     # "sde_sample_freq": sde_sample_freq,
-    #     "policy_kwargs": dict(
-    #         # log_std_init=log_std_init,
-    #         net_arch=net_arch,
-    #         activation_fn=activation_fn
-    #     )
-    # }
 
 
 def sample_trpo_params(trial: optuna.Trial) -> Dict[str, Any]:

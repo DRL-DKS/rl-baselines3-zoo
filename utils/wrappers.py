@@ -1,4 +1,5 @@
 import collections
+from datetime import datetime
 import math
 
 import gym
@@ -397,6 +398,9 @@ class HumanReward(gym.Wrapper):
         self.t = 0
         self.n_envs = n_envs
         self.successes = collections.deque(maxlen=20)
+        self.running_average = collections.deque(maxlen=10)
+        self.episode_reward = 0
+        self.metrics_saved = []
 
     def step(self, action):
         observation = self.get_human_reward_observation(action)
@@ -415,7 +419,15 @@ class HumanReward(gym.Wrapper):
         reward = reward_human
         self.current_state = next_state
 
+        if self.t >= 10000 and self.t % 1000 == 0:
+            avg_reward = sum(self.running_average) / len(self.running_average)
+            self.metrics_saved.append(avg_reward)
+        if self.t == 500000:
+            np.savetxt('reward' + str(datetime.now()) + '.csv',
+                       [p for p in zip(self.metrics_saved)], delimiter=',', fmt='%s')
+
         if done:
+            self.running_average.append(self.episode_true_reward)
             success_rate = sum(self.successes) / len(self.successes)
             if wandb.run is not None:
                 wandb.log({"rollout/ep_human_rew": self.episode_reward_human,
@@ -442,7 +454,9 @@ class HumanReward(gym.Wrapper):
         """
         action_tensor = torch.tensor(action)
         if len(action_tensor.shape) != 0:
-            observation = torch.cat([torch.tensor(self.current_state), action_tensor])
+            state_tensor = torch.tensor(self.current_state)
+            state_tensor = torch.squeeze(state_tensor)
+            observation = torch.cat([state_tensor, action_tensor])
         else:
             action_tensor = torch.tensor(action)
             action_tensor = torch.unsqueeze(action_tensor, 0)
@@ -499,7 +513,10 @@ class HopperMetric(gym.Wrapper):
         self.z_coordinates = collections.deque(maxlen=10)
         self.correct_count = 0
         self.wrong_count = 0
+        self.metricstep = 0
         if wandb.run is not None:
+            wandb.define_metric("hopper/step")
+            wandb.define_metric("hopper/*", step_metric="hopper/step")
             wandb.define_metric("hopper/ep_correct_ratio", summary="mean")
             wandb.define_metric("hopper/ep_avg_z", summary="mean")
 
@@ -524,7 +541,65 @@ class HopperMetric(gym.Wrapper):
             if wandb.run is not None:
                 wandb.log({"hopper/ep_correct_ratio": correct_ratio,
                            "hopper/ep_avg_z": z_coord_average})
+        self.metricstep += 1
+        wandb.log({"hopper/step": self.metricstep})
 
+        return next_state, reward, done, info
+
+    def reset(self):
+        state = self.env.reset()
+        self.current_state = state
+        return state
+
+    def observation(self, obs):
+        self.current_state = obs
+        return obs
+
+
+class SocialNavMetric(gym.Wrapper):
+    """
+    Environment wrapper to replace the env reward function with a human based reward function.
+    In addition, it logs both the env and human reward per episode.
+    """
+
+    def __init__(self, env):
+        super().__init__(env)
+        self.action_force = []
+        self.metricstep = 0
+        self.running_average = collections.deque(maxlen=10)
+        self.metrics_saved = []
+        if wandb.run is not None:
+            wandb.define_metric("socialnav/step")
+            wandb.define_metric("socialnav/*", step_metric="socialnav/step")
+            wandb.define_metric("socialnav/ep_force_applied", summary="mean")
+
+    def shift_interval(self, low=-1, high=1, min_threshold=0, max_threshold=1, x=None):
+        return min_threshold + ((max_threshold - min_threshold) / (high - low)) * (x - low)
+
+    def step(self, action):
+        next_state, reward, done, info = self.env.step(action)
+
+        norm_action = self.shift_interval(-1, 1, 0, 1, action[2])
+        self.action_force.append(norm_action)
+
+        if done:
+
+            average_force = sum(self.action_force) / len(self.action_force)
+            self.running_average.append(average_force)
+            self.action_force = []
+            if wandb.run is not None:
+                wandb.log({"socialnav/ep_force_applied": average_force})
+
+        if self.metricstep >= 10000 and self.metricstep % 1000 == 0:
+            avg_force = sum(self.running_average) / len(self.running_average)
+            self.metrics_saved.append(avg_force)
+        if self.metricstep == 500000:
+            np.savetxt('metrics' + str(datetime.now()) + '.csv',
+                       [p for p in zip(self.metrics_saved)], delimiter=',',fmt='%s')
+
+        self.metricstep += 1
+        if wandb.run is not None:
+            wandb.log({"socialnav/step": self.metricstep})
         return next_state, reward, done, info
 
     def reset(self):

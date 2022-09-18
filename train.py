@@ -137,6 +137,8 @@ if __name__ == "__main__":  # noqa: C901
     parser.add_argument("--regularize", action="store_true", default=False, help="Regularized preference learning")
     parser.add_argument("--workerid", type=int, default=-1)
     parser.add_argument("--n_queries", type=int, default=-1)
+    parser.add_argument("--max_queries", type=int, default=-1)
+    parser.add_argument("--n_init_queries", type=int, default=-1)
     parser.add_argument("--truth", type=int, default=-1)
     args = parser.parse_args()
 

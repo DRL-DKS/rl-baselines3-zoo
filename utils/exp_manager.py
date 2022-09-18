@@ -47,9 +47,10 @@ from torch import nn as nn  # noqa: F401
 
 # Register custom envs
 import utils.import_envs  # noqa: F401 pytype: disable=import-error
-from pref.callbacks import UpdateRewardFunction, UpdateRewardFunctionCriticalPoint
+from pref.callbacks import UpdateRewardFunctionCriticalPoint
 from pref.oracle import HumanCritic
 from pref.sidechannels import RecordingSideChannel
+from pref.unity_gym_custom import CustomUnityEnv
 from pref.utils import get_env_dimensions
 from utils.callbacks import SaveVecNormalizeCallback, TrialEvalCallback
 from utils.hyperparams_opt import HYPERPARAMS_SAMPLER
@@ -387,25 +388,36 @@ class ExperimentManager:
         pref_wrappers, pref_callbacks = None, []
         if "pref_learning" in hyperparams.keys():
             if hyperparams["pref_learning"]["active"]:
+
+                if self.env_id == "Social-Nav-v1":
+                    recording_channel = RecordingSideChannel()
+                    self.env_kwargs = {"recording": recording_channel}
+                    print("Created recorder")
+                else:
+                    recording_channel = None
+
                 if self.args.regularize:
                     print("Regularize")
                     hyperparams["pref_learning"]["human_critic"]["regularize"] = self.args.regularize
                 else:
                     print("No regularize")
 
+                callback_name = list(hyperparams["pref_learning"]["callback"][0].keys())[0]
+                n_init_queries = hyperparams["pref_learning"]["callback"][0][callback_name]["n_initial_queries"]
+                if self.env_id == "Social-Nav-v1":
+                    hyperparams["pref_learning"]["callback"][0][callback_name]["recorder"] = recording_channel
+
                 if self.args.n_queries != -1:
-                    callback_name = list(hyperparams["pref_learning"]["callback"][0].keys())[0]
-                    n_init_queries = hyperparams["pref_learning"]["callback"][0][callback_name]["n_initial_queries"]
-                    total_queries = n_init_queries + self.args.n_queries * 5 * 3 - self.args.n_queries
                     hyperparams["pref_learning"]["callback"][0][callback_name]["n_queries"] = self.args.n_queries
-                    hyperparams["pref_learning"]["callback"][0][callback_name]["max_queries"] = total_queries
+                if self.args.max_queries != -1:
+                    hyperparams["pref_learning"]["callback"][0][callback_name]["max_queries"] = self.args.max_queries
+                if self.args.n_init_queries != -1:
+                    hyperparams["pref_learning"]["callback"][0][callback_name]["n_initial_queries"] = self.args.n_init_queries
 
                 if self.args.truth != -1:
-                    callback_name = list(hyperparams["pref_learning"]["callback"][0].keys())[0]
                     hyperparams["pref_learning"]["callback"][0][callback_name]["truth"] = self.args.truth
 
                 if self.args.workerid != -1:
-                    callback_name = list(hyperparams["pref_learning"]["callback"][0].keys())[0]
                     hyperparams["pref_learning"]["callback"][0][callback_name]["workerid"] = self.args.workerid
                 hc = get_preference_human_critic(hyperparams, self.env_id)
                 pref_callbacks = get_preference_callbacks(hyperparams, hc, self.env_id)
@@ -593,17 +605,19 @@ class ExperimentManager:
         env_kwargs = self.env_kwargs
         if self.env_id == "Social-Nav-v1":
             channel = EngineConfigurationChannel()
-            recording_channel = RecordingSideChannel()
-
             worker_id = random.randint(0, 20000) if eval_env else random.randint(30000, 60000)
             if self.args.workerid != -1:
                 worker_id += self.args.workerid
-            #unity_env = UnityEnvironment('envs/socialnav_supersimple6/socialnav1', side_channels=[channel, recording_channel], worker_id=worker_id, no_graphics=False)
-            unity_env = UnityEnvironment('envs/snappy_rays/socialnav1', side_channels=[channel, recording_channel], worker_id=worker_id, no_graphics=False)
+            unity_env = UnityEnvironment('envs/socialnavfinal/socialnav1', side_channels=[channel], worker_id=worker_id, no_graphics=False)
+            #unity_env = None
+            #custom_unity_env = UnityEnvironment(file_name=None, side_channels=[channel, recording_channel], worker_id=0)
+            #unity_env = UnityEnvironment('envs/snappy_rays_old/snappy_rays', side_channels=[channel, recording_channel], worker_id=worker_id, no_graphics=False)
             channel.set_configuration_parameters(time_scale=30.0)
-            env_id = UnityToGymWrapper
-            env_kwargs = {"unity_env": unity_env, "uint8_visual": False, "allow_multiple_obs": False}
+            if unity_env:
+                env_id = UnityToGymWrapper
+                env_kwargs = {"unity_env": unity_env, "uint8_visual": False, "allow_multiple_obs": False}
 
+        print("hey")
         # On most env, SubprocVecEnv does not help and is quite memory hungry
         # therefore we use DummyVecEnv by default
         env = make_vec_env(
@@ -734,7 +748,7 @@ class ExperimentManager:
 
             # 2. Update the callbacks & wrappers
             for callback in self.callbacks:
-                if isinstance(callback.callback, (UpdateRewardFunction, UpdateRewardFunctionCriticalPoint)):
+                if isinstance(callback.callback, (UpdateRewardFunctionCriticalPoint)):
                     print("Should enter here")
                     callback.callback.hc.update_params(**hc)
                     callback.callback.update_params(**pref)
